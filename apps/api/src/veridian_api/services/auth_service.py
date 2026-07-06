@@ -30,7 +30,7 @@ from veridian_api.infrastructure.auth.tokens import (
 )
 from veridian_api.infrastructure.database.models.oauth import OAuthAccount, UserSession
 from veridian_api.infrastructure.database.models.user import User
-from veridian_api.services.audit_service import AuditService
+from veridian_api.services.audit_service import AuditService, coerce_utc
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,7 @@ class AuthService:
         self._maybe_promote_admin(user)
         self._db.add(user)
         await self._db.flush()
-        await self._audit.record(
+        await self._audit.record_safe(
             AuditEventType.REGISTER,
             user_id=user.id,
             ip_address=ip_address,
@@ -88,14 +88,23 @@ class AuthService:
     ) -> AuthResult:
         normalized_email = email.lower()
         user = await self._db.scalar(select(User).where(User.email == normalized_email))
-        if user is None or not user.password_hash:
-            await self._audit.record(
+        if user is None:
+            await self._audit.record_safe(
                 AuditEventType.LOGIN_FAILED,
                 ip_address=ip_address,
                 user_agent=user_agent,
                 metadata={"email": normalized_email, "reason": "invalid_credentials"},
             )
             raise UnauthorizedError("Invalid email or password")
+        if not user.password_hash:
+            await self._audit.record_safe(
+                AuditEventType.LOGIN_FAILED,
+                user_id=user.id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                metadata={"email": normalized_email, "reason": "oauth_only"},
+            )
+            raise UnauthorizedError("This account uses Google or GitHub sign-in")
 
         self._ensure_account_active(user)
         self._ensure_not_locked(user)
@@ -155,7 +164,7 @@ class AuthService:
         )
         if session is not None:
             session.revoked_at = datetime.now(timezone.utc)
-            await self._audit.record(
+            await self._audit.record_safe(
                 AuditEventType.LOGOUT,
                 user_id=session.user_id,
                 ip_address=ip_address,
@@ -188,7 +197,7 @@ class AuthService:
         self._ensure_account_active(user)
         self._maybe_promote_admin(user)
         await self._record_successful_login(user, ip_address=ip_address, user_agent=user_agent)
-        await self._audit.record(
+        await self._audit.record_safe(
             AuditEventType.OAUTH_LOGIN,
             user_id=user.id,
             ip_address=ip_address,
@@ -275,12 +284,13 @@ class AuthService:
             user.role = UserRole.ADMIN
 
     def _ensure_account_active(self, user: User) -> None:
-        if not user.is_active:
+        if user.is_active is False:
             raise ForbiddenError("Account is disabled")
 
     def _ensure_not_locked(self, user: User) -> None:
         now = datetime.now(timezone.utc)
-        if user.locked_until is not None and user.locked_until > now:
+        locked_until = coerce_utc(user.locked_until)
+        if locked_until is not None and locked_until > now:
             raise ForbiddenError("Account is temporarily locked due to failed login attempts")
 
     async def _record_failed_login(
@@ -297,14 +307,14 @@ class AuthService:
                 minutes=self._settings.auth_lockout_minutes
             )
             locked = True
-            await self._audit.record(
+            await self._audit.record_safe(
                 AuditEventType.ACCOUNT_LOCKED,
                 user_id=user.id,
                 ip_address=ip_address,
                 user_agent=user_agent,
                 metadata={"attempts": user.failed_login_attempts},
             )
-        await self._audit.record(
+        await self._audit.record_safe(
             AuditEventType.LOGIN_FAILED,
             user_id=user.id,
             ip_address=ip_address,
@@ -322,7 +332,7 @@ class AuthService:
         user.failed_login_attempts = 0
         user.locked_until = None
         user.last_login_at = datetime.now(timezone.utc)
-        await self._audit.record(
+        await self._audit.record_safe(
             AuditEventType.LOGIN_SUCCESS,
             user_id=user.id,
             ip_address=ip_address,

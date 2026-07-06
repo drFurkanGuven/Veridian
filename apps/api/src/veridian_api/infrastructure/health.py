@@ -112,9 +112,31 @@ class InfrastructureHealthChecker:
             async with engine.connect() as connection:
                 result = await connection.execute(text("SELECT version_num FROM alembic_version"))
                 version = result.scalar_one_or_none()
-            if version:
-                return ServiceHealth("database_schema", "ok", f"revision={version}")
-            return ServiceHealth("database_schema", "error", "no alembic revision applied")
+                if not version:
+                    return ServiceHealth("database_schema", "error", "no alembic revision applied")
+
+                role_col = await connection.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = 'users' AND column_name = 'role'"
+                    )
+                )
+                if role_col.scalar_one_or_none() is None:
+                    return ServiceHealth(
+                        "database_schema",
+                        "error",
+                        f"revision={version}; missing users.role — run pnpm db:migrate",
+                    )
+
+                audit_table = await connection.execute(text("SELECT to_regclass('public.audit_logs')"))
+                if audit_table.scalar_one_or_none() is None:
+                    return ServiceHealth(
+                        "database_schema",
+                        "error",
+                        f"revision={version}; missing audit_logs — run pnpm db:migrate",
+                    )
+
+            return ServiceHealth("database_schema", "ok", f"revision={version}")
         except Exception as exc:  # noqa: BLE001
             return ServiceHealth("database_schema", "error", str(exc))
 

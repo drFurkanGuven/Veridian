@@ -110,7 +110,19 @@ class OAuthProvidersResponse(CamelModel):
 
 
 def user_to_response(user: User) -> UserResponse:
-    return UserResponse.model_validate(user)
+    role = user.role if user.role is not None else UserRole.USER
+    is_active = True if user.is_active is None else user.is_active
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        avatar_url=user.avatar_url,
+        email_verified=user.email_verified,
+        role=role,
+        is_active=is_active,
+        last_login_at=user.last_login_at,
+        created_at=user.created_at,
+    )
 
 
 def session_to_response(session: UserSession) -> SessionResponse:
