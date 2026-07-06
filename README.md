@@ -38,6 +38,25 @@ veridian/
 - **Python** ≥ 3.9 (for API; 3.12+ recommended)
 - **Docker** (for infrastructure, Phase 2+)
 
+### Installing pnpm (if `corepack` is not available)
+
+`corepack` ships with Node.js 16.13+, but many servers omit it. Use one of these instead:
+
+```bash
+# Option A — via npm (simplest if Node is already installed)
+npm install -g pnpm@9.15.0
+
+# Option B — official standalone installer (no npm required)
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+# Then reload shell: source ~/.bashrc  (or ~/.zshrc)
+
+# Option C — corepack (only if the command exists)
+corepack enable
+corepack prepare pnpm@9.15.0 --activate
+```
+
+Verify: `pnpm --version` (should print 9.x)
+
 ## Getting Started
 
 ### 1. Clone and install

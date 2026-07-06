@@ -62,7 +62,7 @@ services:
       - veridian-net
 
   minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    image: minio/minio:latest
     container_name: veridian-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -84,7 +84,7 @@ services:
       - veridian-net
 
   minio-init:
-    image: minio/mc:RELEASE.2024-12-18T13-15-44Z
+    image: minio/mc:latest
     container_name: veridian-minio-init
     depends_on:
       minio:

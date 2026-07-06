@@ -16,6 +16,7 @@
     "infra:verify": "bash infrastructure/scripts/verify-services.sh",
     "infra:wait": "bash infrastructure/scripts/wait-for-services.sh",
     "infra:reset": "bash infrastructure/scripts/reset.sh",
+    "infra:ports": "bash infrastructure/scripts/check-ports.sh",
     "db:migrate": "bash infrastructure/scripts/migrate.sh",
     "db:alembic": "bash infrastructure/scripts/alembic.sh"
   },

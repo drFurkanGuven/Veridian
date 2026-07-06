@@ -71,7 +71,7 @@ if docker compose -f "${COMPOSE_FILE}" ps --status running 2>/dev/null | grep -q
   :
 else
   bucket="${S3_BUCKET:-veridian}"
-  if docker run --rm --network veridian-net minio/mc:RELEASE.2024-12-18T13-15-44Z \
+  if docker run --rm --network veridian-net minio/mc:latest \
     /bin/sh -c "mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-minioadmin} ${S3_SECRET_KEY:-minioadmin} && mc ls local/${bucket}" \
     >/dev/null 2>&1; then
     echo "  ✓ MinIO bucket '${bucket}' exists"
