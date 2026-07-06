@@ -101,7 +101,9 @@ export default function ProjectsPage() {
               className="flex items-center justify-between rounded-lg border border-ide-border bg-ide-sidebar p-4"
             >
               <div>
-                <p className="font-medium text-white">{project.name}</p>
+                <Link href={`/projects/${project.id}`} className="font-medium text-white hover:underline">
+                  {project.name}
+                </Link>
                 <p className="text-xs text-ide-muted">
                   {project.targetFpga} · {project.toolchain}
                 </p>
