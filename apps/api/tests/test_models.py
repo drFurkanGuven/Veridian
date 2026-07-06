@@ -1,4 +1,5 @@
-from veridian_api.infrastructure.database.base import Base
+from veridian_api.domain.enums import FpgaTarget, Toolchain, UserRole
+from veridian_api.infrastructure.database.base import Base, str_enum
 from veridian_api.infrastructure.database.models import (  # noqa: F401
     AiConversation,
     AiMessage,
@@ -15,15 +16,23 @@ from veridian_api.infrastructure.database.models import (  # noqa: F401
 )
 
 
-from veridian_api.domain.enums import UserRole
-from veridian_api.infrastructure.database.base import str_enum
-
-
 def test_str_enum_uses_lowercase_values() -> None:
     column_type = str_enum(UserRole, "user_role")
-    assert column_type.enums == ["user", "admin"]
-    assert column_type._object_value_for_elem("user") is UserRole.USER
-    assert column_type._object_value_for_elem("admin") is UserRole.ADMIN
+    assert column_type.process_bind_param(UserRole.ADMIN, None) == "admin"
+    assert column_type.process_result_value("user", None) is UserRole.USER
+    assert column_type.process_result_value("admin", None) is UserRole.ADMIN
+    assert column_type.process_result_value("ADMIN", None) is UserRole.ADMIN
+    assert column_type.process_result_value("USER", None) is UserRole.USER
+
+
+def test_str_enum_accepts_legacy_project_enums() -> None:
+    target_type = str_enum(FpgaTarget, "fpga_target")
+    toolchain_type = str_enum(Toolchain, "toolchain")
+    assert target_type.process_result_value("GENERIC", None) is FpgaTarget.GENERIC
+    assert (
+        toolchain_type.process_result_value("YOSYS_NEXTPNR", None)
+        is Toolchain.YOSYS_NEXTPNR
+    )
 
 
 def test_metadata_contains_all_tables() -> None:

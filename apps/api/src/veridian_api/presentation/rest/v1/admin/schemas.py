@@ -67,7 +67,21 @@ class AuditLogListResponse(CamelModel):
 
 
 def admin_user_to_response(user: User) -> AdminUserResponse:
-    return AdminUserResponse.model_validate(user)
+    role = user.role if user.role is not None else UserRole.USER
+    is_active = True if user.is_active is None else user.is_active
+    return AdminUserResponse(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        avatar_url=user.avatar_url,
+        email_verified=user.email_verified,
+        role=role,
+        is_active=is_active,
+        failed_login_attempts=user.failed_login_attempts or 0,
+        locked_until=user.locked_until,
+        last_login_at=user.last_login_at,
+        created_at=user.created_at,
+    )
 
 
 def audit_log_to_response(log: AuditLog) -> AuditLogResponse:

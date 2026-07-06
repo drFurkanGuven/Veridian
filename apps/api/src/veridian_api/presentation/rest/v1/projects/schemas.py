@@ -54,4 +54,14 @@ class ProjectListResponse(CamelModel):
 
 
 def project_to_response(project: Project) -> ProjectResponse:
-    return ProjectResponse.model_validate(project)
+    return ProjectResponse(
+        id=project.id,
+        user_id=project.user_id,
+        name=project.name,
+        description=project.description,
+        target_fpga=project.target_fpga,
+        toolchain=project.toolchain,
+        last_opened_at=project.last_opened_at,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+    )
