@@ -59,6 +59,16 @@ class ObjectStorage:
             Key=key,
         )
 
+    async def presigned_get_url(self, key: str, expires_in: int = 3600) -> str:
+        def _url() -> str:
+            return self._client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self._bucket, "Key": key},
+                ExpiresIn=expires_in,
+            )
+
+        return await asyncio.to_thread(_url)
+
 
 def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()

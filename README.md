@@ -154,7 +154,8 @@ pnpm db:alembic downgrade -1  # Roll back one revision
 | 5 | Authentication | ✅ Complete |
 | 6 | Projects | ✅ Complete |
 | 7 | File tree | ✅ Complete |
-| ... | See architecture doc | Pending |
+| 8 | Compilation jobs | ✅ Complete |
+| ... | Simulation, WebSocket streaming, IDE editor | Pending |
 
 ## License
 

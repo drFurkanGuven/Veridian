@@ -80,7 +80,7 @@ export default async function HomePage() {
         </section>
 
         <footer className="text-center text-xs text-ide-muted">
-          Phase 7 — File tree live. Compilation module next.
+          Phase 8 — Compilation jobs live. Simulation module next.
         </footer>
       </div>
     </main>

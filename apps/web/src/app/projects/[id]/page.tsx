@@ -1,9 +1,17 @@
 'use client';
 
-import type { FileContent, FileNode, FolderNode, ProjectTree } from '@veridian/shared-types';
+import type {
+  ArtifactMeta,
+  FileContent,
+  FileNode,
+  FolderNode,
+  JobLogEntry,
+  JobStatus,
+  ProjectTree,
+} from '@veridian/shared-types';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   createFile,
@@ -11,6 +19,11 @@ import {
   getProjectTree,
   updateFileContent,
 } from '@/lib/files-api';
+import {
+  connectJobWebSocket,
+  getJobArtifacts,
+  startCompilation,
+} from '@/lib/jobs-api';
 import { isLoggedIn } from '@/lib/projects-api';
 
 function collectFiles(tree: ProjectTree): FileNode[] {
@@ -25,16 +38,39 @@ function collectFiles(tree: ProjectTree): FileNode[] {
   return files;
 }
 
+function statusColor(status: JobStatus): string {
+  switch (status) {
+    case 'success':
+      return 'text-green-400';
+    case 'failed':
+      return 'text-red-400';
+    case 'running':
+      return 'text-blue-400';
+    case 'waiting':
+      return 'text-yellow-400';
+    default:
+      return 'text-ide-muted';
+  }
+}
+
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const projectId = params.id;
   const router = useRouter();
+  const wsRef = useRef<WebSocket | null>(null);
 
   const [tree, setTree] = useState<ProjectTree | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileContent | null>(null);
   const [editorValue, setEditorValue] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [topModule, setTopModule] = useState('top');
+  const [compiling, setCompiling] = useState(false);
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  const [jobProgress, setJobProgress] = useState(0);
+  const [compileLogs, setCompileLogs] = useState<JobLogEntry[]>([]);
+  const [artifacts, setArtifacts] = useState<ArtifactMeta[]>([]);
 
   const loadTree = useCallback(async () => {
     const data = await getProjectTree(projectId);
@@ -50,6 +86,12 @@ export default function ProjectDetailPage() {
       setError(err instanceof Error ? err.message : 'Failed to load project');
     });
   }, [loadTree, router]);
+
+  useEffect(() => {
+    return () => {
+      wsRef.current?.close();
+    };
+  }, []);
 
   async function openFile(fileId: string) {
     setError('');
@@ -93,6 +135,50 @@ export default function ProjectDetailPage() {
     }
   }
 
+  async function handleCompile() {
+    setError('');
+    setCompiling(true);
+    setCompileLogs([]);
+    setArtifacts([]);
+    setJobStatus('waiting');
+    setJobProgress(0);
+    wsRef.current?.close();
+
+    try {
+      const result = await startCompilation(projectId, { topModule });
+      setJobStatus(result.status);
+
+      const appendLog = (entry: JobLogEntry) => {
+        setCompileLogs((prev) => {
+          if (prev.some((item) => item.sequence === entry.sequence)) return prev;
+          return [...prev, entry];
+        });
+      };
+
+      const ws = connectJobWebSocket(result.jobId, {
+        onLog: appendLog,
+        onProgress: setJobProgress,
+        onStatus: (status) => {
+          setJobStatus(status);
+          if (status === 'success' || status === 'failed' || status === 'cancelled') {
+            setCompiling(false);
+            getJobArtifacts(result.jobId)
+              .then(setArtifacts)
+              .catch(() => undefined);
+          }
+        },
+        onArtifact: (artifact) => {
+          setArtifacts((prev) => [...prev, artifact]);
+        },
+      });
+      wsRef.current = ws;
+    } catch (err) {
+      setCompiling(false);
+      setJobStatus('failed');
+      setError(err instanceof Error ? err.message : 'Compilation failed to start');
+    }
+  }
+
   const files = tree ? collectFiles(tree) : [];
 
   return (
@@ -102,7 +188,23 @@ export default function ProjectDetailPage() {
           <h1 className="text-xl font-bold text-white">Project IDE</h1>
           <p className="font-mono text-xs text-ide-muted">{projectId}</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-ide-muted">
+            Top module
+            <input
+              value={topModule}
+              onChange={(e) => setTopModule(e.target.value)}
+              className="rounded border border-ide-border bg-ide-bg px-2 py-1 font-mono text-sm text-white"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleCompile}
+            disabled={compiling}
+            className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {compiling ? 'Compiling…' : 'Compile'}
+          </button>
           <button
             type="button"
             onClick={handleCreateFile}
@@ -128,7 +230,7 @@ export default function ProjectDetailPage() {
 
       {error && <p className="px-6 py-2 text-sm text-red-400">{error}</p>}
 
-      <div className="grid flex-1 grid-cols-[240px_1fr]">
+      <div className="grid flex-1 grid-cols-[240px_1fr_320px]">
         <aside className="border-r border-ide-border p-4">
           <h2 className="mb-3 text-xs font-semibold uppercase text-ide-muted">Files</h2>
           <ul className="space-y-1 text-sm">
@@ -149,7 +251,7 @@ export default function ProjectDetailPage() {
           </ul>
         </aside>
 
-        <section className="p-4">
+        <section className="border-r border-ide-border p-4">
           {selectedFile ? (
             <div className="h-full">
               <p className="mb-2 font-mono text-xs text-ide-muted">{selectedFile.path}</p>
@@ -164,6 +266,62 @@ export default function ProjectDetailPage() {
             <p className="text-ide-muted">Select a file or create a new one.</p>
           )}
         </section>
+
+        <aside className="flex flex-col p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase text-ide-muted">Build</h2>
+            {jobStatus && (
+              <span className={`text-xs font-medium ${statusColor(jobStatus)}`}>
+                {jobStatus} {jobProgress > 0 ? `(${jobProgress}%)` : ''}
+              </span>
+            )}
+          </div>
+          <div className="mb-4 h-1 overflow-hidden rounded bg-ide-sidebar">
+            <div
+              className="h-full bg-emerald-500 transition-all"
+              style={{ width: `${jobProgress}%` }}
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto rounded border border-ide-border bg-ide-bg p-3 font-mono text-xs text-ide-muted">
+            {compileLogs.length === 0 ? (
+              <p>Compile logs appear here.</p>
+            ) : (
+              compileLogs.map((log) => (
+                <p
+                  key={log.sequence}
+                  className={
+                    log.level === 'error'
+                      ? 'text-red-400'
+                      : log.level === 'warn'
+                        ? 'text-yellow-400'
+                        : ''
+                  }
+                >
+                  {log.message}
+                </p>
+              ))
+            )}
+          </div>
+          {artifacts.length > 0 && (
+            <div className="mt-4">
+              <h3 className="mb-2 text-xs font-semibold uppercase text-ide-muted">Artifacts</h3>
+              <ul className="space-y-1 text-sm">
+                {artifacts.map((artifact) => (
+                  <li key={artifact.id}>
+                    <a
+                      href={artifact.downloadUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-emerald-400 underline"
+                    >
+                      {artifact.name}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </aside>
       </div>
     </main>
   );
