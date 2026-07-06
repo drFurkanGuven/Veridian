@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import type { Project } from '@veridian/shared-types';
 
 import { createProject, deleteProject, isLoggedIn, listProjects } from '@/lib/projects-api';
+import { getCurrentUser } from '@/lib/account-api';
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export default function ProjectsPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -34,6 +36,9 @@ export default function ProjectsPage() {
       return;
     }
     load();
+    getCurrentUser()
+      .then((user) => setIsAdmin(user.role === 'admin'))
+      .catch(() => undefined);
   }, [router]);
 
   async function handleCreate(event: FormEvent) {
@@ -67,6 +72,11 @@ export default function ProjectsPage() {
           <p className="text-sm text-ide-muted">Your FPGA workspaces</p>
         </div>
         <div className="flex gap-4">
+          {isAdmin && (
+            <Link href="/admin" className="text-sm text-emerald-400 underline hover:text-emerald-300">
+              Admin
+            </Link>
+          )}
           <Link href="/account" className="text-sm text-ide-muted underline hover:text-white">
             Account
           </Link>

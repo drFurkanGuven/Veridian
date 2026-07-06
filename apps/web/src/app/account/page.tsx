@@ -8,7 +8,6 @@ import { useEffect, useState } from 'react';
 import {
   changePassword,
   getCurrentUser,
-  listAuditLogs,
   listSessions,
   revokeOtherSessions,
   revokeSession,
@@ -25,7 +24,6 @@ export default function AccountPage() {
   const [newPassword, setNewPassword] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [auditPreview, setAuditPreview] = useState<string[]>([]);
 
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -42,15 +40,6 @@ export default function AccountPage() {
     setUser(me);
     setDisplayName(me.displayName);
     setSessions(sessionItems);
-    if (me.role === 'admin') {
-      const audit = await listAuditLogs(1, 10);
-      setAuditPreview(
-        audit.items.map(
-          (entry) =>
-            `${new Date(entry.createdAt).toLocaleString()} · ${entry.eventType} · ${entry.userId ?? '—'}`,
-        ),
-      );
-    }
   }
 
   async function handleProfileSave() {
@@ -115,9 +104,16 @@ export default function AccountPage() {
           <h1 className="text-2xl font-bold text-white">Account</h1>
           <p className="text-sm text-ide-muted">{user.email}</p>
         </div>
-        <Link href="/projects" className="text-sm text-ide-muted underline">
-          Back to projects
-        </Link>
+        <div className="flex gap-4 text-sm">
+          {user.role === 'admin' && (
+            <Link href="/admin" className="text-emerald-400 underline hover:text-emerald-300">
+              Admin panel
+            </Link>
+          )}
+          <Link href="/projects" className="text-ide-muted underline">
+            Back to projects
+          </Link>
+        </div>
       </header>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
@@ -213,18 +209,6 @@ export default function AccountPage() {
           {sessions.length === 0 && <li className="text-ide-muted">No active sessions</li>}
         </ul>
       </section>
-
-      {user.role === 'admin' && (
-        <section className="rounded border border-ide-border p-4">
-          <h2 className="mb-3 text-sm font-semibold uppercase text-ide-muted">Audit log preview</h2>
-          <ul className="space-y-1 font-mono text-xs text-ide-muted">
-            {auditPreview.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-            {auditPreview.length === 0 && <li>No audit events yet</li>}
-          </ul>
-        </section>
-      )}
     </main>
   );
 }

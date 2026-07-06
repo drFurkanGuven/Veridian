@@ -98,6 +98,11 @@ export interface AdminUser extends User {
   lockedUntil: string | null;
 }
 
+export interface UpdateAdminUserRequest {
+  isActive?: boolean;
+  role?: UserRole;
+}
+
 export interface AuditLogEntry {
   id: number;
   userId: string | null;

@@ -1,5 +1,4 @@
 import type {
-  AuditLogEntry,
   ChangePasswordRequest,
   UpdateProfileRequest,
   User,
@@ -86,31 +85,6 @@ export async function revokeOtherSessions(): Promise<number> {
   if (!response.ok) throw new Error(await parseError(response));
   const data = await response.json();
   return data.revokedCount as number;
-}
-
-export async function listAuditLogs(page = 1, pageSize = 50): Promise<{
-  items: AuditLogEntry[];
-  total: number;
-}> {
-  const response = await fetch(
-    `${API_URL}/api/v1/admin/audit?page=${page}&pageSize=${pageSize}`,
-    { headers: authHeaders() },
-  );
-  if (!response.ok) throw new Error(await parseError(response));
-  return response.json();
-}
-
-export async function listAdminUsers(page = 1, pageSize = 20, search = ''): Promise<{
-  items: User[];
-  total: number;
-}> {
-  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-  if (search) params.set('search', search);
-  const response = await fetch(`${API_URL}/api/v1/admin/users?${params}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(await parseError(response));
-  return response.json();
 }
 
 export function isLoggedIn(): boolean {
