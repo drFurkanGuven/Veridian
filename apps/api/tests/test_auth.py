@@ -54,18 +54,19 @@ def test_oauth_state_rejects_wrong_provider() -> None:
 def test_google_authorization_url() -> None:
     settings = Settings(
         google_client_id="google-client-id",
-        google_redirect_uri="http://localhost:8000/callback",
+        app_url="http://localhost:3000",
     )
     url = build_authorization_url(OAuthProvider.GOOGLE, "state-123", settings)
     assert "accounts.google.com" in url
     assert "google-client-id" in url
     assert "state-123" in url
+    assert "localhost%3A3000%2Fauth%2Fcallback%2Fgoogle" in url
 
 
 def test_github_authorization_url() -> None:
     settings = Settings(
         github_client_id="github-client-id",
-        github_redirect_uri="http://localhost:8000/callback",
+        app_url="http://localhost:3000",
     )
     url = build_authorization_url(OAuthProvider.GITHUB, "state-456", settings)
     assert "github.com/login/oauth/authorize" in url

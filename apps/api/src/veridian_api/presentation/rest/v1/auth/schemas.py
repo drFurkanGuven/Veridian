@@ -68,5 +68,10 @@ class OAuthCallbackRequest(CamelModel):
     state: str = Field(min_length=1)
 
 
+class OAuthProvidersResponse(CamelModel):
+    google: bool
+    github: bool
+
+
 def user_to_response(user: User) -> UserResponse:
     return UserResponse.model_validate(user)

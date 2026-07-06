@@ -14,6 +14,7 @@ from veridian_api.presentation.rest.v1.auth.schemas import (
     LoginRequest,
     LogoutRequest,
     OAuthCallbackRequest,
+    OAuthProvidersResponse,
     OAuthUrlResponse,
     RefreshTokenRequest,
     RegisterRequest,
@@ -112,6 +113,14 @@ async def logout(
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     return user_to_response(current_user)
+
+
+@router.get("/providers", response_model=OAuthProvidersResponse)
+async def auth_providers(settings: Settings = Depends(get_settings_dep)) -> OAuthProvidersResponse:
+    return OAuthProvidersResponse(
+        google=bool(settings.google_client_id and settings.google_client_secret),
+        github=bool(settings.github_client_id and settings.github_client_secret),
+    )
 
 
 @router.get("/google/url", response_model=OAuthUrlResponse)

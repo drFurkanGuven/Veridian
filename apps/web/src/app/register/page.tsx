@@ -4,20 +4,21 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 
-import { getOAuthUrl, registerUser, saveAuthTokens } from '@/lib/auth-api';
+import { OAuthButtons } from '@/components/oauth-buttons';
+import { registerUser, saveAuthTokens } from '@/lib/auth-api';
 
 export default function RegisterPage() {
   const router = useRouter();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
-    setError(null);
+    setError('');
     try {
       const result = await registerUser({ email, password, displayName });
       saveAuthTokens(result.tokens);
@@ -26,17 +27,6 @@ export default function RegisterPage() {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleOAuth(provider: 'google' | 'github') {
-    setError(null);
-    try {
-      const { url, state } = await getOAuthUrl(provider);
-      sessionStorage.setItem(`veridian_oauth_state_${provider}`, state);
-      window.location.href = url;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'OAuth unavailable');
     }
   }
 
@@ -90,22 +80,7 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => handleOAuth('google')}
-            className="flex-1 rounded border border-ide-border px-4 py-2 text-sm hover:bg-ide-bg"
-          >
-            Google
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOAuth('github')}
-            className="flex-1 rounded border border-ide-border px-4 py-2 text-sm hover:bg-ide-bg"
-          >
-            GitHub
-          </button>
-        </div>
+        <OAuthButtons onError={setError} />
 
         <p className="text-center text-sm text-ide-muted">
           Already have an account?{' '}

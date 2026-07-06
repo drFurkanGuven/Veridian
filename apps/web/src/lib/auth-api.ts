@@ -1,16 +1,6 @@
-import type { AuthTokens, User } from '@veridian/shared-types';
+import type { AuthResponse, AuthTokens, OAuthProvidersResponse, OAuthUrlResponse } from '@veridian/shared-types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-
-export interface AuthResponse {
-  user: User;
-  tokens: AuthTokens;
-}
-
-export interface OAuthUrlResponse {
-  url: string;
-  state: string;
-}
 
 async function parseError(response: Response): Promise<string> {
   try {
@@ -19,6 +9,12 @@ async function parseError(response: Response): Promise<string> {
   } catch {
     return response.statusText;
   }
+}
+
+export async function getAuthProviders(): Promise<OAuthProvidersResponse> {
+  const response = await fetch(`${API_URL}/api/v1/auth/providers`);
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
 }
 
 export async function registerUser(input: {
@@ -54,8 +50,26 @@ export async function getOAuthUrl(provider: 'google' | 'github'): Promise<OAuthU
   return response.json();
 }
 
+export async function completeOAuthCallback(
+  provider: 'google' | 'github',
+  code: string,
+  state: string,
+): Promise<AuthResponse> {
+  const response = await fetch(`${API_URL}/api/v1/auth/${provider}/callback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, state }),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
 export function saveAuthTokens(tokens: AuthTokens): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem('veridian_access_token', tokens.accessToken);
   localStorage.setItem('veridian_refresh_token', tokens.refreshToken);
+}
+
+export function oauthStateKey(provider: 'google' | 'github'): string {
+  return `veridian_oauth_state_${provider}`;
 }

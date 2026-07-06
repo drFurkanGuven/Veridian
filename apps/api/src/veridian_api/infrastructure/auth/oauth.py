@@ -27,7 +27,7 @@ def build_authorization_url(provider: OAuthProvider, state: str, settings: Setti
             raise ValidationError("Google OAuth is not configured")
         params = {
             "client_id": settings.google_client_id,
-            "redirect_uri": settings.google_redirect_uri,
+            "redirect_uri": settings.google_oauth_redirect_uri,
             "response_type": "code",
             "scope": "openid email profile",
             "state": state,
@@ -41,7 +41,7 @@ def build_authorization_url(provider: OAuthProvider, state: str, settings: Setti
             raise ValidationError("GitHub OAuth is not configured")
         params = {
             "client_id": settings.github_client_id,
-            "redirect_uri": settings.github_redirect_uri,
+            "redirect_uri": settings.github_oauth_redirect_uri,
             "scope": "read:user user:email",
             "state": state,
         }
@@ -77,7 +77,7 @@ async def _google_user_info(
             "code": code,
             "client_id": settings.google_client_id,
             "client_secret": settings.google_client_secret,
-            "redirect_uri": settings.google_redirect_uri,
+            "redirect_uri": settings.google_oauth_redirect_uri,
             "grant_type": "authorization_code",
         },
     )
@@ -124,7 +124,7 @@ async def _github_user_info(
             "client_id": settings.github_client_id,
             "client_secret": settings.github_client_secret,
             "code": code,
-            "redirect_uri": settings.github_redirect_uri,
+            "redirect_uri": settings.github_oauth_redirect_uri,
         },
     )
     if token_response.status_code != 200:

@@ -36,6 +36,11 @@ export interface AuthResponse {
   tokens: AuthTokens;
 }
 
+export interface OAuthProvidersResponse {
+  google: boolean;
+  github: boolean;
+}
+
 export interface OAuthUrlResponse {
   url: string;
   state: string;
