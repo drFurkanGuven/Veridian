@@ -38,13 +38,26 @@ if [[ ! -f "${ROOT_DIR}/.env" ]]; then
   echo "⚠ ${ROOT_DIR}/.env missing — copy from .env.production.example"
 fi
 
+stop_port() {
+  local port="$1"
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${port}/tcp" 2>/dev/null || true
+    sleep 1
+  fi
+}
+
 echo "=== Installing Veridian systemd services ==="
 echo "  uvicorn: ${UVICORN}"
 echo "  web:     ${STANDALONE_DIR}/apps/web/server.js"
 echo ""
 
-# API service — venv yolunu sunucuya göre ayarla
-sed "s|ExecStart=.*|ExecStart=${UVICORN} veridian_api.main:app --host 127.0.0.1 --port 8000 --workers 2|" \
+# Eski nohup / çakışan süreçleri temizle
+stop_port 8000
+pkill -f "uvicorn veridian_api" 2>/dev/null || true
+sleep 1
+
+# API service — tek worker (port çakışması ve kaynak tasarrufu)
+sed "s|ExecStart=.*|ExecStart=${UVICORN} veridian_api.main:app --host 127.0.0.1 --port 8000 --workers 1|" \
   "${ROOT_DIR}/infrastructure/systemd/veridian-api.service" \
   > /etc/systemd/system/veridian-api.service
 
@@ -59,6 +72,9 @@ sleep 2
 echo ""
 if curl -sf --max-time 5 http://127.0.0.1:8000/health >/dev/null; then
   echo "  ✓ API listening on :8000"
+  if ! systemctl is-active --quiet veridian-api; then
+    echo "  ⚠ API responds but veridian-api unit is not active — orphan process?"
+  fi
 else
   echo "  ✗ API not responding — check: journalctl -u veridian-api -n 30 --no-pager"
 fi

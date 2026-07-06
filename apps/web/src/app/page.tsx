@@ -1,10 +1,11 @@
 import type { JobStatus } from '@veridian/shared-types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_PUBLIC_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_SERVER_URL = process.env.API_INTERNAL_URL ?? API_PUBLIC_URL;
 
 async function checkApiHealth(): Promise<{ status: string; version: string } | null> {
   try {
-    const response = await fetch(`${API_URL}/health`, {
+    const response = await fetch(`${API_SERVER_URL}/health`, {
       next: { revalidate: 0 },
     });
     if (!response.ok) return null;
@@ -42,7 +43,7 @@ export default async function HomePage() {
               </dd>
             </div>
             <div className="flex items-center justify-between">
-              <dt className="text-sm">API ({API_URL})</dt>
+              <dt className="text-sm">API ({API_PUBLIC_URL})</dt>
               <dd className="flex items-center gap-2 text-sm">
                 {health ? (
                   <span className="flex items-center gap-2 text-green-400">

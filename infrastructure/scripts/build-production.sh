@@ -22,7 +22,6 @@ fi
 export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://api.veridian.furkanguven.space}"
 export NEXT_PUBLIC_WS_URL="${NEXT_PUBLIC_WS_URL:-wss://api.veridian.furkanguven.space}"
 
-# .env hâlâ localhost içeriyorsa production URL kullan
 if [[ "${NEXT_PUBLIC_API_URL}" == *"localhost"* ]]; then
   echo "⚠ .env has localhost API URL — using production URL for build"
   export NEXT_PUBLIC_API_URL="https://api.veridian.furkanguven.space"
@@ -32,6 +31,8 @@ fi
 echo "Building Veridian for production..."
 echo "  API URL: ${NEXT_PUBLIC_API_URL}"
 
+# NODE_ENV=production iken pnpm devDependencies kurmaz (tsup kaybolur)
+unset NODE_ENV
 CI=true pnpm install --frozen-lockfile 2>/dev/null || CI=true pnpm install
 
 export NODE_ENV=production
