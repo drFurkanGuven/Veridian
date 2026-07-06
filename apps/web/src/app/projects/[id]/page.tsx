@@ -22,6 +22,7 @@ import {
 } from '@/lib/files-api';
 import {
   connectJobWebSocket,
+  downloadArtifact,
   getJobArtifacts,
   startCompilation,
   startSimulation,
@@ -403,14 +404,17 @@ export default function ProjectDetailPage() {
               <ul className="space-y-1 text-sm">
                 {artifacts.map((artifact) => (
                   <li key={artifact.id}>
-                    <a
-                      href={artifact.downloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        downloadArtifact(artifact.downloadUrl, artifact.name).catch((err: unknown) => {
+                          setError(err instanceof Error ? err.message : 'Download failed');
+                        });
+                      }}
                       className="text-emerald-400 underline"
                     >
                       {artifact.name}
-                    </a>
+                    </button>
                   </li>
                 ))}
               </ul>

@@ -7,6 +7,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from veridian_api.core.config import Settings
+from veridian_api.core.urls import artifact_download_url
 from veridian_api.domain.enums import ArtifactType, JobStatus, LogLevel, Simulator, Toolchain
 from veridian_api.infrastructure.database.models.job import Artifact, CompilationJob, JobLog, SimulationJob
 
@@ -148,14 +150,13 @@ def job_log_to_response(log: JobLog) -> JobLogEntry:
     )
 
 
-async def artifact_to_response(artifact: Artifact, storage) -> ArtifactMeta:
-    download_url = await storage.presigned_get_url(artifact.storage_key)
+def artifact_to_response(artifact: Artifact, settings: Settings) -> ArtifactMeta:
     return ArtifactMeta(
         id=artifact.id,
         name=artifact.name,
         artifact_type=artifact.artifact_type,
         size_bytes=artifact.size_bytes,
         mime_type=artifact.mime_type,
-        download_url=download_url,
+        download_url=artifact_download_url(settings.api_url, artifact.job_id, artifact.id),
         created_at=artifact.created_at,
     )

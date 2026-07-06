@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from veridian_api.core.config import Settings, get_settings
+from veridian_api.core.urls import artifact_download_url
 from veridian_api.domain.enums import ArtifactType, HdlLanguage, JobStatus, JobType, LogLevel, Toolchain
 from veridian_api.infrastructure.database.models.file import File
 from veridian_api.infrastructure.database.models.job import Artifact, CompilationJob, JobLog
@@ -122,6 +123,7 @@ async def _execute_compilation(
                     "artifactType": artifact.artifact_type.value,
                     "sizeBytes": artifact.size_bytes,
                     "mimeType": artifact.mime_type,
+                    "downloadUrl": artifact_download_url(settings.api_url, artifact.job_id, artifact.id),
                 },
             },
         )

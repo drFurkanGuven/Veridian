@@ -89,6 +89,18 @@ export async function getJobArtifacts(jobId: string): Promise<ArtifactMeta[]> {
   return data.items;
 }
 
+export async function downloadArtifact(downloadUrl: string, filename: string): Promise<void> {
+  const response = await fetch(downloadUrl, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await parseError(response));
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(href);
+}
+
 export function connectJobWebSocket(
   jobId: string,
   handlers: {

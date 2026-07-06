@@ -30,3 +30,12 @@ async def test_get_job_requires_auth(client: AsyncClient) -> None:
 async def test_get_job_logs_requires_auth(client: AsyncClient) -> None:
     response = await client.get("/api/v1/jobs/00000000-0000-0000-0000-000000000001/logs")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_download_artifact_requires_auth(client: AsyncClient) -> None:
+    response = await client.get(
+        "/api/v1/jobs/00000000-0000-0000-0000-000000000001"
+        "/artifacts/00000000-0000-0000-0000-000000000002/download"
+    )
+    assert response.status_code == 401

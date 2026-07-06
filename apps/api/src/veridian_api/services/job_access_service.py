@@ -65,3 +65,16 @@ class JobAccessService:
             )
         ).all()
         return job_type, list(artifacts)
+
+    async def get_artifact(self, user_id: UUID, job_id: UUID, artifact_id: UUID) -> Artifact:
+        job_type, _ = await self.resolve_job(user_id, job_id)
+        artifact = await self._db.scalar(
+            select(Artifact).where(
+                Artifact.id == artifact_id,
+                Artifact.job_id == job_id,
+                Artifact.job_type == job_type,
+            )
+        )
+        if artifact is None:
+            raise NotFoundError("Artifact not found")
+        return artifact

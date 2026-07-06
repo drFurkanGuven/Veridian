@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from veridian_api.core.config import Settings, get_settings
+from veridian_api.core.urls import artifact_download_url
 from veridian_api.domain.enums import ArtifactType, HdlLanguage, JobStatus, JobType, LogLevel, Simulator
 from veridian_api.infrastructure.database.models.file import File
 from veridian_api.infrastructure.database.models.job import Artifact, JobLog, SimulationJob
@@ -108,7 +109,7 @@ async def _execute_simulation(session, job_id: UUID, settings: Settings) -> None
     )
     session.add(log_artifact)
     await session.flush()
-    await _publish_artifact(job.id, log_artifact)
+    await _publish_artifact(job.id, log_artifact, settings)
 
     if vcd_bytes:
         vcd_key = f"jobs/{job.id}/waveform.vcd"
@@ -124,7 +125,7 @@ async def _execute_simulation(session, job_id: UUID, settings: Settings) -> None
         )
         session.add(vcd_artifact)
         await session.flush()
-        await _publish_artifact(job.id, vcd_artifact)
+        await _publish_artifact(job.id, vcd_artifact, settings)
 
     if success:
         job.status = JobStatus.SUCCESS
@@ -186,7 +187,7 @@ def _run_simulator(
     return True, logs, None
 
 
-async def _publish_artifact(job_id: UUID, artifact: Artifact) -> None:
+async def _publish_artifact(job_id: UUID, artifact: Artifact, settings: Settings) -> None:
     await publish_job_event(
         job_id,
         {
@@ -197,6 +198,7 @@ async def _publish_artifact(job_id: UUID, artifact: Artifact) -> None:
                 "artifactType": artifact.artifact_type.value,
                 "sizeBytes": artifact.size_bytes,
                 "mimeType": artifact.mime_type,
+                "downloadUrl": artifact_download_url(settings.api_url, artifact.job_id, artifact.id),
             },
         },
     )

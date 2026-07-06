@@ -4,6 +4,7 @@ from typing import Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 
 from veridian_api.core.deps import get_current_user, get_db, get_settings_dep
 from veridian_api.core.config import Settings
@@ -59,6 +60,23 @@ async def get_job_artifacts(
     settings: Settings = Depends(get_settings_dep),
 ) -> JobArtifactsResponse:
     _, artifacts = await jobs.list_artifacts(current_user.id, job_id)
-    storage = ObjectStorage(settings)
-    items = [await artifact_to_response(a, storage) for a in artifacts]
+    items = [artifact_to_response(a, settings) for a in artifacts]
     return JobArtifactsResponse(items=items)
+
+
+@router.get("/{job_id}/artifacts/{artifact_id}/download")
+async def download_job_artifact(
+    job_id: UUID,
+    artifact_id: UUID,
+    current_user: User = Depends(get_current_user),
+    jobs: JobAccessService = Depends(get_job_access),
+    settings: Settings = Depends(get_settings_dep),
+) -> Response:
+    artifact = await jobs.get_artifact(current_user.id, job_id, artifact_id)
+    storage = ObjectStorage(settings)
+    data = await storage.get_bytes(artifact.storage_key)
+    return Response(
+        content=data,
+        media_type=artifact.mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{artifact.name}"'},
+    )
