@@ -4,9 +4,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from veridian_api.domain.enums import UserRole
 from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
@@ -23,6 +24,16 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, name="user_role", native_enum=False),
+        default=UserRole.USER,
+        nullable=False,
+        index=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     oauth_accounts: Mapped[list[OAuthAccount]] = relationship(
         back_populates="user",

@@ -12,6 +12,7 @@ from veridian_api.infrastructure.database.models import (  # noqa: F401
     AiConversation,
     AiMessage,
     Artifact,
+    AuditLog,
     CompilationJob,
     File,
     Folder,

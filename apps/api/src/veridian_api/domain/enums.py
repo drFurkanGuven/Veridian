@@ -64,3 +64,23 @@ class Toolchain(str, enum.Enum):
     ICARUS = "icarus"
     VERILATOR = "verilator"
     GHDL = "ghdl"
+
+
+class UserRole(str, enum.Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+
+class AuditEventType(str, enum.Enum):
+    REGISTER = "register"
+    LOGIN_SUCCESS = "login_success"
+    LOGIN_FAILED = "login_failed"
+    OAUTH_LOGIN = "oauth_login"
+    LOGOUT = "logout"
+    PASSWORD_CHANGED = "password_changed"
+    SESSION_REVOKED = "session_revoked"
+    ACCOUNT_LOCKED = "account_locked"
+    ACCOUNT_DISABLED = "account_disabled"
+    ACCOUNT_ENABLED = "account_enabled"
+    ROLE_CHANGED = "role_changed"
+    PROFILE_UPDATED = "profile_updated"

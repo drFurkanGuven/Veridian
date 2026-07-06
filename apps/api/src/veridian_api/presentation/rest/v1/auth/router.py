@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
+from uuid import UUID
 
 from veridian_api.core.config import Settings
 from veridian_api.core.deps import get_current_user, get_db, get_settings_dep
@@ -11,6 +12,7 @@ from veridian_api.infrastructure.database.models.user import User
 from veridian_api.presentation.rest.v1.auth.schemas import (
     AuthResponse,
     AuthTokensResponse,
+    ChangePasswordRequest,
     LoginRequest,
     LogoutRequest,
     OAuthCallbackRequest,
@@ -18,9 +20,15 @@ from veridian_api.presentation.rest.v1.auth.schemas import (
     OAuthUrlResponse,
     RefreshTokenRequest,
     RegisterRequest,
+    RevokeOtherSessionsRequest,
+    RevokeOthersResponse,
+    SessionListResponse,
+    UpdateProfileRequest,
     UserResponse,
+    session_to_response,
     user_to_response,
 )
+from veridian_api.services.account_service import AccountService
 from veridian_api.services.auth_service import AuthResult, AuthService
 
 router = APIRouter()
@@ -48,6 +56,13 @@ def get_auth_service(
     settings: Settings = Depends(get_settings_dep),
 ) -> AuthService:
     return AuthService(db, settings)
+
+
+def get_account_service(
+    db=Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+) -> AccountService:
+    return AccountService(db, settings)
 
 
 @router.post("/register", response_model=AuthResponse, status_code=201)
@@ -105,14 +120,92 @@ async def refresh(
 @router.post("/logout", status_code=204)
 async def logout(
     body: LogoutRequest,
+    request: Request,
     auth: AuthService = Depends(get_auth_service),
 ) -> None:
-    await auth.logout(body.refresh_token)
+    user_agent, ip_address = _client_meta(request)
+    await auth.logout(body.refresh_token, ip_address=ip_address, user_agent=user_agent)
 
 
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     return user_to_response(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    body: UpdateProfileRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    account: AccountService = Depends(get_account_service),
+) -> UserResponse:
+    user_agent, ip_address = _client_meta(request)
+    user = await account.update_profile(
+        current_user,
+        body.display_name,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    return user_to_response(user)
+
+
+@router.post("/change-password", status_code=204)
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    account: AccountService = Depends(get_account_service),
+) -> None:
+    user_agent, ip_address = _client_meta(request)
+    await account.change_password(
+        current_user,
+        body.current_password,
+        body.new_password,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+
+@router.get("/sessions", response_model=SessionListResponse)
+async def list_sessions(
+    current_user: User = Depends(get_current_user),
+    account: AccountService = Depends(get_account_service),
+) -> SessionListResponse:
+    sessions = await account.list_sessions(current_user.id)
+    return SessionListResponse(items=[session_to_response(session) for session in sessions])
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def revoke_session(
+    session_id: UUID,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    account: AccountService = Depends(get_account_service),
+) -> None:
+    user_agent, ip_address = _client_meta(request)
+    await account.revoke_session(
+        current_user.id,
+        session_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+
+@router.post("/sessions/revoke-others", response_model=RevokeOthersResponse)
+async def revoke_other_sessions(
+    body: RevokeOtherSessionsRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    account: AccountService = Depends(get_account_service),
+) -> RevokeOthersResponse:
+    user_agent, ip_address = _client_meta(request)
+    revoked = await account.revoke_other_sessions(
+        current_user.id,
+        body.refresh_token,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    return RevokeOthersResponse(revoked_count=revoked)
 
 
 @router.get("/providers", response_model=OAuthProvidersResponse)

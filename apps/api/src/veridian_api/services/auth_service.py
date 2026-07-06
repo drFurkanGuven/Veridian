@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -10,14 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from veridian_api.core.config import Settings
-from veridian_api.core.exceptions import ConflictError, UnauthorizedError, ValidationError
-from veridian_api.domain.enums import OAuthProvider
+from veridian_api.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError, ValidationError
+from veridian_api.domain.enums import AuditEventType, OAuthProvider, UserRole
 from veridian_api.infrastructure.auth.oauth import (
     OAuthUserInfo,
     build_authorization_url,
     exchange_code_for_user,
 )
 from veridian_api.infrastructure.auth.password import hash_password, verify_password
+from veridian_api.infrastructure.auth.password_policy import validate_password
 from veridian_api.infrastructure.auth.tokens import (
     create_access_token,
     create_oauth_state,
@@ -29,6 +30,7 @@ from veridian_api.infrastructure.auth.tokens import (
 )
 from veridian_api.infrastructure.database.models.oauth import OAuthAccount, UserSession
 from veridian_api.infrastructure.database.models.user import User
+from veridian_api.services.audit_service import AuditService
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class AuthService:
     def __init__(self, db: AsyncSession, settings: Settings) -> None:
         self._db = db
         self._settings = settings
+        self._audit = AuditService(db)
 
     async def register(
         self,
@@ -52,18 +55,28 @@ class AuthService:
         user_agent: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> AuthResult:
-        existing = await self._db.scalar(select(User.id).where(User.email == email.lower()))
+        normalized_email = email.lower()
+        existing = await self._db.scalar(select(User.id).where(User.email == normalized_email))
         if existing:
             raise ConflictError("Email already registered")
 
+        validate_password(password, min_length=self._settings.auth_min_password_length)
+
         user = User(
-            email=email.lower(),
+            email=normalized_email,
             password_hash=hash_password(password),
             display_name=display_name.strip(),
             email_verified=False,
         )
+        self._maybe_promote_admin(user)
         self._db.add(user)
         await self._db.flush()
+        await self._audit.record(
+            AuditEventType.REGISTER,
+            user_id=user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
         return await self._issue_tokens(user, user_agent=user_agent, ip_address=ip_address)
 
     async def login(
@@ -73,12 +86,26 @@ class AuthService:
         user_agent: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> AuthResult:
-        user = await self._db.scalar(select(User).where(User.email == email.lower()))
+        normalized_email = email.lower()
+        user = await self._db.scalar(select(User).where(User.email == normalized_email))
         if user is None or not user.password_hash:
-            raise UnauthorizedError("Invalid email or password")
-        if not verify_password(password, user.password_hash):
+            await self._audit.record(
+                AuditEventType.LOGIN_FAILED,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                metadata={"email": normalized_email, "reason": "invalid_credentials"},
+            )
             raise UnauthorizedError("Invalid email or password")
 
+        self._ensure_account_active(user)
+        self._ensure_not_locked(user)
+
+        if not verify_password(password, user.password_hash):
+            await self._record_failed_login(user, ip_address=ip_address, user_agent=user_agent)
+            raise UnauthorizedError("Invalid email or password")
+
+        await self._record_successful_login(user, ip_address=ip_address, user_agent=user_agent)
+        self._maybe_promote_admin(user)
         return await self._issue_tokens(user, user_agent=user_agent, ip_address=ip_address)
 
     async def refresh(
@@ -102,6 +129,9 @@ class AuthService:
         if session is None:
             raise UnauthorizedError("Invalid or expired refresh token")
 
+        self._ensure_account_active(session.user)
+        self._ensure_not_locked(session.user)
+
         session.revoked_at = now
         return await self._issue_tokens(
             session.user,
@@ -109,7 +139,13 @@ class AuthService:
             ip_address=ip_address,
         )
 
-    async def logout(self, refresh_token: str) -> None:
+    async def logout(
+        self,
+        refresh_token: str,
+        *,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> None:
         token_hash = hash_token(refresh_token)
         session = await self._db.scalar(
             select(UserSession).where(
@@ -119,11 +155,18 @@ class AuthService:
         )
         if session is not None:
             session.revoked_at = datetime.now(timezone.utc)
+            await self._audit.record(
+                AuditEventType.LOGOUT,
+                user_id=session.user_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
 
     async def get_user_by_id(self, user_id: UUID) -> User:
         user = await self._db.scalar(select(User).where(User.id == user_id))
         if user is None:
             raise UnauthorizedError("User not found")
+        self._ensure_account_active(user)
         return user
 
     def get_authorization_url(self, provider: OAuthProvider) -> tuple[str, str]:
@@ -142,6 +185,16 @@ class AuthService:
         verify_oauth_state(state, provider.value, self._settings)
         oauth_user = await exchange_code_for_user(provider, code, self._settings)
         user = await self._upsert_oauth_user(provider, oauth_user)
+        self._ensure_account_active(user)
+        self._maybe_promote_admin(user)
+        await self._record_successful_login(user, ip_address=ip_address, user_agent=user_agent)
+        await self._audit.record(
+            AuditEventType.OAUTH_LOGIN,
+            user_id=user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={"provider": provider.value},
+        )
         return await self._issue_tokens(user, user_agent=user_agent, ip_address=ip_address)
 
     async def _upsert_oauth_user(self, provider: OAuthProvider, info: OAuthUserInfo) -> User:
@@ -169,6 +222,7 @@ class AuthService:
                 avatar_url=info.avatar_url,
                 email_verified=info.email_verified,
             )
+            self._maybe_promote_admin(user)
             self._db.add(user)
             await self._db.flush()
         else:
@@ -193,6 +247,8 @@ class AuthService:
         user_agent: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> AuthResult:
+        self._ensure_account_active(user)
+
         access_token, expires_in = create_access_token(user.id, self._settings)
         refresh_token = create_refresh_token()
 
@@ -212,6 +268,65 @@ class AuthService:
             access_token=access_token,
             refresh_token=refresh_token,
             expires_in=expires_in,
+        )
+
+    def _maybe_promote_admin(self, user: User) -> None:
+        if user.email.lower() in self._settings.admin_email_list:
+            user.role = UserRole.ADMIN
+
+    def _ensure_account_active(self, user: User) -> None:
+        if not user.is_active:
+            raise ForbiddenError("Account is disabled")
+
+    def _ensure_not_locked(self, user: User) -> None:
+        now = datetime.now(timezone.utc)
+        if user.locked_until is not None and user.locked_until > now:
+            raise ForbiddenError("Account is temporarily locked due to failed login attempts")
+
+    async def _record_failed_login(
+        self,
+        user: User,
+        *,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> None:
+        user.failed_login_attempts += 1
+        locked = False
+        if user.failed_login_attempts >= self._settings.auth_max_login_attempts:
+            user.locked_until = datetime.now(timezone.utc) + timedelta(
+                minutes=self._settings.auth_lockout_minutes
+            )
+            locked = True
+            await self._audit.record(
+                AuditEventType.ACCOUNT_LOCKED,
+                user_id=user.id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                metadata={"attempts": user.failed_login_attempts},
+            )
+        await self._audit.record(
+            AuditEventType.LOGIN_FAILED,
+            user_id=user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={"attempts": user.failed_login_attempts, "locked": locked},
+        )
+
+    async def _record_successful_login(
+        self,
+        user: User,
+        *,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> None:
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        user.last_login_at = datetime.now(timezone.utc)
+        await self._audit.record(
+            AuditEventType.LOGIN_SUCCESS,
+            user_id=user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
     @staticmethod

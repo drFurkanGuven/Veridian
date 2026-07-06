@@ -1,4 +1,5 @@
 from veridian_api.infrastructure.database.models.ai import AiConversation, AiMessage
+from veridian_api.infrastructure.database.models.audit import AuditLog
 from veridian_api.infrastructure.database.models.file import File, Folder
 from veridian_api.infrastructure.database.models.job import (
     Artifact,
@@ -14,6 +15,7 @@ __all__ = [
     "AiConversation",
     "AiMessage",
     "Artifact",
+    "AuditLog",
     "CompilationJob",
     "File",
     "Folder",

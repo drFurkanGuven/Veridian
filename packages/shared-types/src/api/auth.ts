@@ -1,11 +1,30 @@
 export type OAuthProvider = 'google' | 'github';
 
+export type UserRole = 'user' | 'admin';
+
+export type AuditEventType =
+  | 'register'
+  | 'login_success'
+  | 'login_failed'
+  | 'oauth_login'
+  | 'logout'
+  | 'password_changed'
+  | 'session_revoked'
+  | 'account_locked'
+  | 'account_disabled'
+  | 'account_enabled'
+  | 'role_changed'
+  | 'profile_updated';
+
 export interface User {
   id: string;
   email: string;
   displayName: string;
   avatarUrl: string | null;
   emailVerified: boolean;
+  role: UserRole;
+  isActive: boolean;
+  lastLoginAt: string | null;
   createdAt: string;
 }
 
@@ -55,6 +74,39 @@ export interface OAuthCallbackRequest {
 
 export interface LogoutRequest {
   refreshToken: string;
+}
+
+export interface UserSession {
+  id: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface UpdateProfileRequest {
+  displayName: string;
+}
+
+export interface AdminUser extends User {
+  failedLoginAttempts: number;
+  lockedUntil: string | null;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  userId: string | null;
+  targetUserId: string | null;
+  eventType: AuditEventType;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
 }
 
 export interface ApiError {

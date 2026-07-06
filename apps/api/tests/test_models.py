@@ -30,6 +30,7 @@ def test_metadata_contains_all_tables() -> None:
         "job_logs",
         "ai_conversations",
         "ai_messages",
+        "audit_logs",
     }
     assert expected == table_names
 

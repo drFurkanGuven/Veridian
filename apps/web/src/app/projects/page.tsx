@@ -66,9 +66,14 @@ export default function ProjectsPage() {
           <h1 className="text-3xl font-bold text-white">Projects</h1>
           <p className="text-sm text-ide-muted">Your FPGA workspaces</p>
         </div>
-        <Link href="/" className="text-sm text-ide-muted underline hover:text-white">
-          Home
-        </Link>
+        <div className="flex gap-4">
+          <Link href="/account" className="text-sm text-ide-muted underline hover:text-white">
+            Account
+          </Link>
+          <Link href="/" className="text-sm text-ide-muted underline hover:text-white">
+            Home
+          </Link>
+        </div>
       </header>
 
       <form onSubmit={handleCreate} className="mb-8 flex gap-3">

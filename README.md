@@ -156,6 +156,7 @@ pnpm db:alembic downgrade -1  # Roll back one revision
 | 7 | File tree | ✅ Complete |
 | 8 | Compilation jobs | ✅ Complete |
 | 9 | Simulation jobs | ✅ Complete |
+| 10 | Account security & audit | ✅ Complete |
 | ... | Waveform viewer, Monaco editor, AI module | Pending |
 
 ## License

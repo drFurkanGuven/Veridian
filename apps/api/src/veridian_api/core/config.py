@@ -68,6 +68,15 @@ class Settings(BaseSettings):
     rate_limit_ai_requests_per_minute: int = 20
     rate_limit_enabled: bool = True
 
+    auth_max_login_attempts: int = 5
+    auth_lockout_minutes: int = 15
+    auth_min_password_length: int = 8
+    admin_emails: str = ""
+
+    @property
+    def admin_email_list(self) -> set[str]:
+        return {email.strip().lower() for email in self.admin_emails.split(",") if email.strip()}
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.api_cors_origins.split(",") if origin.strip()]
