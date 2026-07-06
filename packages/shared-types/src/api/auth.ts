@@ -39,6 +39,8 @@ export interface AuthResponse {
 export interface OAuthProvidersResponse {
   google: boolean;
   github: boolean;
+  googleRedirectUri?: string | null;
+  githubRedirectUri?: string | null;
 }
 
 export interface OAuthUrlResponse {

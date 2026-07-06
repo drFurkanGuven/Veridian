@@ -117,9 +117,13 @@ async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
 
 @router.get("/providers", response_model=OAuthProvidersResponse)
 async def auth_providers(settings: Settings = Depends(get_settings_dep)) -> OAuthProvidersResponse:
+    google_ok = bool(settings.google_client_id and settings.google_client_secret)
+    github_ok = bool(settings.github_client_id and settings.github_client_secret)
     return OAuthProvidersResponse(
-        google=bool(settings.google_client_id and settings.google_client_secret),
-        github=bool(settings.github_client_id and settings.github_client_secret),
+        google=google_ok,
+        github=github_ok,
+        google_redirect_uri=settings.google_oauth_redirect_uri if google_ok else None,
+        github_redirect_uri=settings.github_oauth_redirect_uri if github_ok else None,
     )
 
 

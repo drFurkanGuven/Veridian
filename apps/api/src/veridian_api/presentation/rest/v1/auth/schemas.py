@@ -71,6 +71,8 @@ class OAuthCallbackRequest(CamelModel):
 class OAuthProvidersResponse(CamelModel):
     google: bool
     github: bool
+    google_redirect_uri: Optional[str] = None
+    github_redirect_uri: Optional[str] = None
 
 
 def user_to_response(user: User) -> UserResponse:
