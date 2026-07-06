@@ -1,0 +1,35 @@
+{
+  "name": "veridian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Veridian — develop FPGA projects entirely from your browser",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yaml,yml}\"",
+    "infra:up": "bash infrastructure/scripts/up.sh",
+    "infra:down": "bash infrastructure/scripts/down.sh",
+    "infra:logs": "docker compose -f infrastructure/docker-compose.yml logs -f",
+    "infra:verify": "bash infrastructure/scripts/verify-services.sh",
+    "infra:wait": "bash infrastructure/scripts/wait-for-services.sh",
+    "infra:reset": "bash infrastructure/scripts/reset.sh",
+    "db:migrate": "bash infrastructure/scripts/migrate.sh",
+    "db:alembic": "bash infrastructure/scripts/alembic.sh"
+  },
+  "devDependencies": {
+    "typescript-eslint": "^8.18.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

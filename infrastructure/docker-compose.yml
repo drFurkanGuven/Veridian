@@ -1,0 +1,122 @@
+name: veridian
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: veridian-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-veridian}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-veridian}
+      POSTGRES_DB: ${POSTGRES_DB:-veridian}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-veridian} -d ${POSTGRES_DB:-veridian}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - veridian-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: veridian-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - veridian-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: veridian-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-veridian}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-veridian}
+    ports:
+      - '${RABBITMQ_PORT:-5672}:5672'
+      - '${RABBITMQ_MANAGEMENT_PORT:-15672}:15672'
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - veridian-net
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: veridian-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      - '${MINIO_API_PORT:-9000}:9000'
+      - '${MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://localhost:9000/minio/health/live || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - veridian-net
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-12-18T13-15-44Z
+    container_name: veridian-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-veridian}
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY 2>/dev/null; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+      mc mb local/$$S3_BUCKET --ignore-existing;
+      mc anonymous set none local/$$S3_BUCKET;
+      echo 'MinIO bucket ready:' $$S3_BUCKET;
+      "
+    networks:
+      - veridian-net
+
+volumes:
+  postgres_data:
+    name: veridian_postgres_data
+  redis_data:
+    name: veridian_redis_data
+  rabbitmq_data:
+    name: veridian_rabbitmq_data
+  minio_data:
+    name: veridian_minio_data
+
+networks:
+  veridian-net:
+    name: veridian-net
+    driver: bridge
