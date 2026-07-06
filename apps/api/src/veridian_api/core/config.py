@@ -32,17 +32,23 @@ class Settings(BaseSettings):
     github_client_secret: str = ""
     github_redirect_uri: str = ""
 
+    @staticmethod
+    def _frontend_oauth_redirect(app_url: str, provider: str) -> str:
+        return f"{app_url.rstrip('/')}/auth/callback/{provider}"
+
     @property
     def google_oauth_redirect_uri(self) -> str:
-        if self.google_redirect_uri:
+        legacy = "/api/v1/auth/google/callback"
+        if self.google_redirect_uri and legacy not in self.google_redirect_uri:
             return self.google_redirect_uri
-        return f"{self.app_url.rstrip('/')}/auth/callback/google"
+        return self._frontend_oauth_redirect(self.app_url, "google")
 
     @property
     def github_oauth_redirect_uri(self) -> str:
-        if self.github_redirect_uri:
+        legacy = "/api/v1/auth/github/callback"
+        if self.github_redirect_uri and legacy not in self.github_redirect_uri:
             return self.github_redirect_uri
-        return f"{self.app_url.rstrip('/')}/auth/callback/github"
+        return self._frontend_oauth_redirect(self.app_url, "github")
 
     database_url: str = "postgresql+asyncpg://veridian:veridian@localhost:5432/veridian"
     redis_url: str = "redis://localhost:6379/0"

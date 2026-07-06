@@ -51,7 +51,15 @@ def test_oauth_state_rejects_wrong_provider() -> None:
         verify_oauth_state(state, OAuthProvider.GITHUB.value, settings)
 
 
-def test_google_authorization_url() -> None:
+def test_google_authorization_url_ignores_legacy_api_redirect() -> None:
+    settings = Settings(
+        google_client_id="google-client-id",
+        app_url="https://veridian.furkanguven.space",
+        google_redirect_uri="https://api.veridian.furkanguven.space/api/v1/auth/google/callback",
+    )
+    url = build_authorization_url(OAuthProvider.GOOGLE, "state-123", settings)
+    assert "veridian.furkanguven.space%2Fauth%2Fcallback%2Fgoogle" in url
+    assert "api.veridian" not in url
     settings = Settings(
         google_client_id="google-client-id",
         app_url="http://localhost:3000",
