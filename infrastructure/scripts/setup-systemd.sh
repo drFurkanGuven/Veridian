@@ -54,6 +54,22 @@ systemctl daemon-reload
 systemctl enable veridian-api veridian-web
 systemctl restart veridian-api veridian-web
 
+sleep 2
+
+echo ""
+if curl -sf --max-time 5 http://127.0.0.1:8000/health >/dev/null; then
+  echo "  ✓ API listening on :8000"
+else
+  echo "  ✗ API not responding — check: journalctl -u veridian-api -n 30 --no-pager"
+fi
+
+if curl -sf --max-time 5 -o /dev/null http://127.0.0.1:3000/; then
+  echo "  ✓ Web listening on :3000"
+else
+  echo "  ✗ Web not responding — check: journalctl -u veridian-web -n 30 --no-pager"
+  echo "    Often caused by incomplete build — run: pnpm build:prod"
+fi
+
 echo ""
 systemctl --no-pager status veridian-api veridian-web || true
 

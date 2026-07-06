@@ -24,6 +24,7 @@
     "db:setup": "bash infrastructure/scripts/setup-host-postgres.sh",
     "db:alembic": "bash infrastructure/scripts/alembic.sh",
     "build:prod": "bash infrastructure/scripts/build-production.sh",
+    "setup:env": "bash infrastructure/scripts/setup-env.sh",
     "setup:nginx": "bash infrastructure/scripts/setup-nginx.sh",
     "setup:systemd": "bash infrastructure/scripts/setup-systemd.sh",
     "setup:prod": "bash infrastructure/scripts/setup-production.sh"
