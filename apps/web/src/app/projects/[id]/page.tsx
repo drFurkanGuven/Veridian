@@ -8,6 +8,7 @@ import type {
   JobLogEntry,
   JobStatus,
   ProjectTree,
+  Simulator,
 } from '@veridian/shared-types';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -23,8 +24,11 @@ import {
   connectJobWebSocket,
   getJobArtifacts,
   startCompilation,
+  startSimulation,
 } from '@/lib/jobs-api';
 import { isLoggedIn } from '@/lib/projects-api';
+
+type BuildMode = 'compile' | 'simulate';
 
 function collectFiles(tree: ProjectTree): FileNode[] {
   const files = [...tree.rootFiles];
@@ -65,11 +69,14 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const [buildMode, setBuildMode] = useState<BuildMode>('compile');
   const [topModule, setTopModule] = useState('top');
-  const [compiling, setCompiling] = useState(false);
+  const [testbenchFileId, setTestbenchFileId] = useState('');
+  const [simulator, setSimulator] = useState<Simulator>('icarus');
+  const [jobRunning, setJobRunning] = useState(false);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [jobProgress, setJobProgress] = useState(0);
-  const [compileLogs, setCompileLogs] = useState<JobLogEntry[]>([]);
+  const [jobLogs, setJobLogs] = useState<JobLogEntry[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactMeta[]>([]);
 
   const loadTree = useCallback(async () => {
@@ -92,6 +99,15 @@ export default function ProjectDetailPage() {
       wsRef.current?.close();
     };
   }, []);
+
+  const files = tree ? collectFiles(tree) : [];
+
+  useEffect(() => {
+    if (!testbenchFileId && files.length > 0) {
+      const tb = files.find((f) => f.path.includes('tb')) ?? files[0];
+      setTestbenchFileId(tb.id);
+    }
+  }, [files, testbenchFileId]);
 
   async function openFile(fileId: string) {
     setError('');
@@ -135,51 +151,83 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function handleCompile() {
-    setError('');
-    setCompiling(true);
-    setCompileLogs([]);
+  async function startJob(jobId: string) {
+    setJobLogs([]);
     setArtifacts([]);
     setJobStatus('waiting');
     setJobProgress(0);
     wsRef.current?.close();
 
+    const appendLog = (entry: JobLogEntry) => {
+      setJobLogs((prev) => {
+        if (prev.some((item) => item.sequence === entry.sequence)) return prev;
+        return [...prev, entry];
+      });
+    };
+
+    const ws = connectJobWebSocket(jobId, {
+      onLog: appendLog,
+      onProgress: setJobProgress,
+      onStatus: (status) => {
+        setJobStatus(status);
+        if (status === 'success' || status === 'failed' || status === 'cancelled') {
+          setJobRunning(false);
+          getJobArtifacts(jobId)
+            .then(setArtifacts)
+            .catch(() => undefined);
+        }
+      },
+      onArtifact: (artifact) => {
+        setArtifacts((prev) => [...prev, artifact]);
+      },
+    });
+    wsRef.current = ws;
+  }
+
+  async function handleCompile() {
+    setError('');
+    setJobRunning(true);
     try {
       const result = await startCompilation(projectId, { topModule });
       setJobStatus(result.status);
-
-      const appendLog = (entry: JobLogEntry) => {
-        setCompileLogs((prev) => {
-          if (prev.some((item) => item.sequence === entry.sequence)) return prev;
-          return [...prev, entry];
-        });
-      };
-
-      const ws = connectJobWebSocket(result.jobId, {
-        onLog: appendLog,
-        onProgress: setJobProgress,
-        onStatus: (status) => {
-          setJobStatus(status);
-          if (status === 'success' || status === 'failed' || status === 'cancelled') {
-            setCompiling(false);
-            getJobArtifacts(result.jobId)
-              .then(setArtifacts)
-              .catch(() => undefined);
-          }
-        },
-        onArtifact: (artifact) => {
-          setArtifacts((prev) => [...prev, artifact]);
-        },
-      });
-      wsRef.current = ws;
+      await startJob(result.jobId);
     } catch (err) {
-      setCompiling(false);
+      setJobRunning(false);
       setJobStatus('failed');
       setError(err instanceof Error ? err.message : 'Compilation failed to start');
     }
   }
 
-  const files = tree ? collectFiles(tree) : [];
+  async function handleSimulate() {
+    if (!testbenchFileId) {
+      setError('Select a testbench file');
+      return;
+    }
+    setError('');
+    setJobRunning(true);
+    try {
+      const result = await startSimulation(projectId, {
+        simulator,
+        testbenchFileId,
+        topModule,
+      });
+      setJobStatus(result.status);
+      await startJob(result.jobId);
+    } catch (err) {
+      setJobRunning(false);
+      setJobStatus('failed');
+      setError(err instanceof Error ? err.message : 'Simulation failed to start');
+    }
+  }
+
+  const runLabel =
+    buildMode === 'compile'
+      ? jobRunning
+        ? 'Compiling…'
+        : 'Compile'
+      : jobRunning
+        ? 'Simulating…'
+        : 'Simulate';
 
   return (
     <main className="flex min-h-screen flex-col">
@@ -197,13 +245,43 @@ export default function ProjectDetailPage() {
               className="rounded border border-ide-border bg-ide-bg px-2 py-1 font-mono text-sm text-white"
             />
           </label>
+          {buildMode === 'simulate' && (
+            <>
+              <label className="flex items-center gap-2 text-sm text-ide-muted">
+                Testbench
+                <select
+                  value={testbenchFileId}
+                  onChange={(e) => setTestbenchFileId(e.target.value)}
+                  className="rounded border border-ide-border bg-ide-bg px-2 py-1 font-mono text-sm text-white"
+                >
+                  {files.map((file) => (
+                    <option key={file.id} value={file.id}>
+                      {file.path}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-ide-muted">
+                Simulator
+                <select
+                  value={simulator}
+                  onChange={(e) => setSimulator(e.target.value as Simulator)}
+                  className="rounded border border-ide-border bg-ide-bg px-2 py-1 text-sm text-white"
+                >
+                  <option value="icarus">Icarus</option>
+                  <option value="verilator">Verilator</option>
+                  <option value="ghdl">GHDL</option>
+                </select>
+              </label>
+            </>
+          )}
           <button
             type="button"
-            onClick={handleCompile}
-            disabled={compiling}
+            onClick={buildMode === 'compile' ? handleCompile : handleSimulate}
+            disabled={jobRunning}
             className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50"
           >
-            {compiling ? 'Compiling…' : 'Compile'}
+            {runLabel}
           </button>
           <button
             type="button"
@@ -268,10 +346,27 @@ export default function ProjectDetailPage() {
         </section>
 
         <aside className="flex flex-col p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase text-ide-muted">Build</h2>
+          <div className="mb-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setBuildMode('compile')}
+              className={`rounded px-2 py-1 text-xs ${
+                buildMode === 'compile' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
+              }`}
+            >
+              Compile
+            </button>
+            <button
+              type="button"
+              onClick={() => setBuildMode('simulate')}
+              className={`rounded px-2 py-1 text-xs ${
+                buildMode === 'simulate' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
+              }`}
+            >
+              Simulate
+            </button>
             {jobStatus && (
-              <span className={`text-xs font-medium ${statusColor(jobStatus)}`}>
+              <span className={`ml-auto text-xs font-medium ${statusColor(jobStatus)}`}>
                 {jobStatus} {jobProgress > 0 ? `(${jobProgress}%)` : ''}
               </span>
             )}
@@ -283,10 +378,10 @@ export default function ProjectDetailPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto rounded border border-ide-border bg-ide-bg p-3 font-mono text-xs text-ide-muted">
-            {compileLogs.length === 0 ? (
-              <p>Compile logs appear here.</p>
+            {jobLogs.length === 0 ? (
+              <p>{buildMode === 'compile' ? 'Compile' : 'Simulation'} logs appear here.</p>
             ) : (
-              compileLogs.map((log) => (
+              jobLogs.map((log) => (
                 <p
                   key={log.sequence}
                   className={

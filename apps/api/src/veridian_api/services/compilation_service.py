@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from veridian_api.core.config import Settings
 from veridian_api.core.exceptions import NotFoundError, ValidationError
-from veridian_api.domain.enums import JobType
+from veridian_api.domain.enums import JobStatus, JobType
 from veridian_api.infrastructure.database.models.job import Artifact, CompilationJob, JobLog
 from veridian_api.services.project_service import ProjectService
 from veridian_api.workers.compile_runner import enqueue_compilation

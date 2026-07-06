@@ -12,7 +12,7 @@ from veridian_api.infrastructure.cache.redis import get_redis_client
 from veridian_api.infrastructure.database.session import async_session_factory
 from veridian_api.infrastructure.jobs.events import job_channel
 from veridian_api.services.auth_service import AuthService
-from veridian_api.services.compilation_service import CompilationService
+from veridian_api.services.job_access_service import JobAccessService
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +30,9 @@ async def job_progress_ws(
         async with async_session_factory() as session:
             auth = AuthService(session, settings)
             user_id = auth.decode_access_token(token, settings)
-            compilation = CompilationService(session, settings)
-            job = await compilation.get_job(user_id, job_id)
-            logs = await compilation.get_logs(user_id, job_id)
+            jobs = JobAccessService(session)
+            _, job = await jobs.resolve_job(user_id, job_id)
+            _, logs = await jobs.get_logs(user_id, job_id)
     except UnauthorizedError:
         await websocket.close(code=4401)
         return
@@ -41,12 +41,7 @@ async def job_progress_ws(
         return
 
     await websocket.accept()
-    await websocket.send_json(
-        {
-            "type": "status",
-            "status": job.status.value,
-        }
-    )
+    await websocket.send_json({"type": "status", "status": job.status.value})
     await websocket.send_json({"type": "progress", "percent": job.progress})
     for log in logs:
         await websocket.send_json(

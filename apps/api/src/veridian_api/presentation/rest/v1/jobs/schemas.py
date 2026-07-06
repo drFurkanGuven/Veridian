@@ -7,8 +7,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from veridian_api.domain.enums import ArtifactType, JobStatus, LogLevel, Toolchain
-from veridian_api.infrastructure.database.models.job import Artifact, CompilationJob, JobLog
+from veridian_api.domain.enums import ArtifactType, JobStatus, LogLevel, Simulator, Toolchain
+from veridian_api.infrastructure.database.models.job import Artifact, CompilationJob, JobLog, SimulationJob
 
 
 class CamelModel(BaseModel):
@@ -25,6 +25,18 @@ class CompileRequest(CamelModel):
 
 
 class CompileResponse(CamelModel):
+    job_id: UUID
+    status: JobStatus
+    ws_url: str
+
+
+class SimulateRequest(CamelModel):
+    simulator: Simulator = Simulator.ICARUS
+    testbench_file_id: UUID
+    top_module: str = Field(min_length=1, max_length=255)
+
+
+class SimulateResponse(CamelModel):
     job_id: UUID
     status: JobStatus
     ws_url: str
@@ -74,6 +86,25 @@ class CompilationJobListResponse(CamelModel):
     items: list[CompilationJobResponse]
 
 
+class SimulationJobResponse(CamelModel):
+    id: UUID
+    project_id: UUID
+    user_id: UUID
+    status: JobStatus
+    simulator: Simulator
+    testbench_file_id: UUID
+    top_module: str
+    progress: int
+    error_message: Optional[str]
+    started_at: Optional[datetime]
+    finished_at: Optional[datetime]
+    created_at: datetime
+
+
+class SimulationJobListResponse(CamelModel):
+    items: list[SimulationJobResponse]
+
+
 def compilation_job_to_response(job: CompilationJob) -> CompilationJobResponse:
     return CompilationJobResponse(
         id=job.id,
@@ -83,6 +114,23 @@ def compilation_job_to_response(job: CompilationJob) -> CompilationJobResponse:
         toolchain=job.toolchain,
         top_module=job.top_module,
         constraint_file_id=job.constraint_file_id,
+        progress=job.progress,
+        error_message=job.error_message,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        created_at=job.created_at,
+    )
+
+
+def simulation_job_to_response(job: SimulationJob) -> SimulationJobResponse:
+    return SimulationJobResponse(
+        id=job.id,
+        project_id=job.project_id,
+        user_id=job.user_id,
+        status=job.status,
+        simulator=job.simulator,
+        testbench_file_id=job.testbench_file_id,
+        top_module=job.top_module,
         progress=job.progress,
         error_message=job.error_message,
         started_at=job.started_at,

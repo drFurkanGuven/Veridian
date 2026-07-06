@@ -4,6 +4,10 @@ import type {
   CompileRequest,
   CompileResponse,
   JobLogEntry,
+  JobStatus,
+  SimulateRequest,
+  SimulateResponse,
+  SimulationJob,
 } from '@veridian/shared-types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -50,7 +54,20 @@ export async function startCompilation(
   return response.json();
 }
 
-export async function getCompilationJob(jobId: string): Promise<CompilationJob> {
+export async function startSimulation(
+  projectId: string,
+  input: SimulateRequest,
+): Promise<SimulateResponse> {
+  const response = await fetch(`${API_URL}/api/v1/projects/${projectId}/simulate`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
+export async function getJob(jobId: string): Promise<CompilationJob | SimulationJob> {
   const response = await fetch(`${API_URL}/api/v1/jobs/${jobId}`, { headers: authHeaders() });
   if (!response.ok) throw new Error(await parseError(response));
   return response.json();
@@ -77,7 +94,7 @@ export function connectJobWebSocket(
   handlers: {
     onLog?: (entry: JobLogEntry) => void;
     onProgress?: (percent: number) => void;
-    onStatus?: (status: CompilationJob['status']) => void;
+    onStatus?: (status: JobStatus) => void;
     onArtifact?: (artifact: ArtifactMeta) => void;
     onError?: () => void;
   },
@@ -92,7 +109,7 @@ export function connectJobWebSocket(
       const msg = JSON.parse(event.data as string) as
         | { type: 'log'; sequence: number; level: JobLogEntry['level']; message: string }
         | { type: 'progress'; percent: number }
-        | { type: 'status'; status: CompilationJob['status'] }
+        | { type: 'status'; status: JobStatus }
         | { type: 'artifact'; artifact: ArtifactMeta };
 
       if (msg.type === 'log') {

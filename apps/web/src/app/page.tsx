@@ -80,7 +80,7 @@ export default async function HomePage() {
         </section>
 
         <footer className="text-center text-xs text-ide-muted">
-          Phase 8 — Compilation jobs live. Simulation module next.
+          Phase 9 — Simulation jobs live. Waveform viewer next.
         </footer>
       </div>
     </main>

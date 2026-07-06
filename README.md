@@ -155,7 +155,8 @@ pnpm db:alembic downgrade -1  # Roll back one revision
 | 6 | Projects | ✅ Complete |
 | 7 | File tree | ✅ Complete |
 | 8 | Compilation jobs | ✅ Complete |
-| ... | Simulation, WebSocket streaming, IDE editor | Pending |
+| 9 | Simulation jobs | ✅ Complete |
+| ... | Waveform viewer, Monaco editor, AI module | Pending |
 
 ## License
 
