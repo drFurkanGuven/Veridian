@@ -68,14 +68,32 @@ dns_has_a_record() {
   fi
 }
 
+server_name_pattern() {
+  local name="$1"
+  local escaped="${name//./\\.}"
+  echo "server_name[[:space:]]+${escaped}[[:space:];]"
+}
+
+count_server_name_blocks() {
+  local name="$1"
+  nginx -T 2>/dev/null | grep -cE "$(server_name_pattern "${name}")" || true
+}
+
+list_server_name_configs() {
+  local name="$1"
+  local pattern
+  pattern="$(server_name_pattern "${name}")"
+  grep -rlE "${pattern}" /etc/nginx/ 2>/dev/null || true
+}
+
 check_duplicate_server_name() {
   local name="$1"
   local count
-  count="$(nginx -T 2>/dev/null | grep -c "server_name.*${name}" || true)"
+  count="$(count_server_name_blocks "${name}")"
   if [[ "${count}" -gt 1 ]]; then
     echo "  ⚠ WARNING: '${name}' appears ${count} times in nginx config."
-    echo "    Another site config may be handling this domain (403 risk)."
-    echo "    Run: nginx -T 2>/dev/null | grep -B5 '${name}'"
+    echo "    Config files:"
+    list_server_name_configs "${name}" | sed 's/^/      /'
     return 1
   fi
   return 0
@@ -346,16 +364,16 @@ cmd_diagnose() {
   done
 
   echo ""
-  echo "server_name conflicts:"
+  echo "server_name blocks:"
   for host in "${DOMAIN}" "${API_DOMAIN}"; do
     local count
-    count="$(nginx -T 2>/dev/null | grep -c "server_name.*${host}" || true)"
+    count="$(count_server_name_blocks "${host}")"
     if [[ "${count}" -le 1 ]]; then
       echo "  ✓ ${host} (${count} block)"
     else
       echo "  ✗ ${host} (${count} blocks — DUPLICATE, may cause 403)"
-      nginx -T 2>/dev/null | grep -B3 "server_name.*${host}" || true
     fi
+    list_server_name_configs "${host}" | sed 's/^/      /'
   done
 
   echo ""
