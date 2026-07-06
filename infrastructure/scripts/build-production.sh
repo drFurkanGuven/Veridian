@@ -11,14 +11,17 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
   set +a
 fi
 
-export NODE_ENV=production
 export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://api.veridian.furkanguven.space}"
 export NEXT_PUBLIC_WS_URL="${NEXT_PUBLIC_WS_URL:-wss://api.veridian.furkanguven.space}"
 
 echo "Building Veridian for production..."
 echo "  API URL: ${NEXT_PUBLIC_API_URL}"
 
-pnpm install
+# devDependencies (tsup, typescript, next toolchain) gerekli — NODE_ENV=production ÖNCE set etme
+CI=true pnpm install --frozen-lockfile 2>/dev/null || CI=true pnpm install
+
+export NODE_ENV=production
+
 pnpm --filter @veridian/shared-types build
 pnpm --filter @veridian/web build
 
@@ -29,5 +32,7 @@ cp -r apps/web/.next/static "${STANDALONE}/.next/static"
 
 echo ""
 echo "✅ Build complete."
-echo "   systemctl restart veridian-web"
-echo "   systemctl restart veridian-api"
+echo ""
+echo "Next:"
+echo "  sudo bash infrastructure/scripts/setup-systemd.sh"
+echo "  sudo systemctl restart veridian-web veridian-api"

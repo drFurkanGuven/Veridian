@@ -16,11 +16,7 @@ bash "${ROOT_DIR}/infrastructure/scripts/setup-nginx.sh" install
 bash "${ROOT_DIR}/infrastructure/scripts/setup-nginx.sh" ssl
 
 # 2. Systemd servisleri
-cp "${ROOT_DIR}/infrastructure/systemd/veridian-api.service" /etc/systemd/system/
-cp "${ROOT_DIR}/infrastructure/systemd/veridian-web.service" /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable veridian-api veridian-web
-systemctl restart veridian-api veridian-web
+bash "${ROOT_DIR}/infrastructure/scripts/setup-systemd.sh"
 
 echo ""
 echo "✅ Production setup complete."
