@@ -60,42 +60,43 @@ prepare_webroot() {
 dns_has_a_record() {
   local host="$1"
   local ip=""
+  local resolver
 
-  if command -v dig >/dev/null 2>&1; then
-    # Yerel resolver (systemd-resolved negatif cache tutabilir)
-    ip="$(dig +short A "${host}" 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
-    if [[ -n "${ip}" ]]; then
-      return 0
+  if ! command -v dig >/dev/null 2>&1; then
+    if command -v host >/dev/null 2>&1; then
+      host -t A "${host}" 2>/dev/null | grep -q "has address"
+      return
     fi
-    # Önbelleği bypass et — doğrudan public DNS
-    ip="$(dig +short A "${host}" @8.8.8.8 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
-    if [[ -n "${ip}" ]]; then
-      return 0
-    fi
-    # Authoritative (Namecheap)
-    ip="$(dig +short A "${host}" @dns1.registrar-servers.com 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
-    [[ -n "${ip}" ]]
+    getent ahosts "${host}" 2>/dev/null | grep -q STREAM
     return
   fi
 
-  if command -v host >/dev/null 2>&1; then
-    host -t A "${host}" 2>/dev/null | grep -q "has address"
-    return
-  fi
+  for resolver in "" "@dns1.registrar-servers.com" "@8.8.8.8" "@1.1.1.1"; do
+    ip="$(dig +short +time=2 +tries=1 A "${host}" ${resolver} 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
+    if [[ -n "${ip}" ]]; then
+      return 0
+    fi
+  done
 
-  getent ahosts "${host}" 2>/dev/null | grep -q STREAM
+  return 1
 }
 
 dns_lookup_ip() {
   local host="$1"
   local ip=""
-  if command -v dig >/dev/null 2>&1; then
-    ip="$(dig +short A "${host}" 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
-    [[ -n "${ip}" ]] && echo "${ip}" && return
-    ip="$(dig +short A "${host}" @8.8.8.8 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
-    [[ -n "${ip}" ]] && echo "${ip}" && return
-    dig +short A "${host}" @dns1.registrar-servers.com 2>/dev/null | grep -E '^[0-9]+\.' | head -1
+  local resolver
+
+  if ! command -v dig >/dev/null 2>&1; then
+    return
   fi
+
+  for resolver in "" "@dns1.registrar-servers.com" "@8.8.8.8" "@1.1.1.1"; do
+    ip="$(dig +short +time=2 +tries=1 A "${host}" ${resolver} 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
+    if [[ -n "${ip}" ]]; then
+      echo "${ip}"
+      return
+    fi
+  done
 }
 
 server_name_pattern() {
@@ -164,17 +165,21 @@ test_acme_webroot() {
   echo "test-ok" > "${path}"
   chmod 644 "${path}"
 
+  # Sunucu yerel DNS çözemese bile nginx'i localhost üzerinden test et
   local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' "http://${host}/.well-known/acme-challenge/${token}" || echo "000")"
+  code="$(curl -sS -o /dev/null -w '%{http_code}' \
+    --resolve "${host}:80:127.0.0.1" \
+    --connect-timeout 5 \
+    "http://${host}/.well-known/acme-challenge/${token}" 2>/dev/null || echo "000")"
   rm -f "${path}"
 
   if [[ "${code}" == "200" ]]; then
-    echo "  ✓ ACME webroot OK for ${host} (HTTP ${code})"
+    echo "  ✓ ACME webroot OK for ${host} (HTTP ${code}, via 127.0.0.1)"
     return 0
   fi
 
   echo "  ✗ ACME webroot FAILED for ${host} (HTTP ${code}, expected 200)"
-  echo "    Likely causes: duplicate server_name, SELinux, firewall, wrong nginx block"
+  echo "    Likely causes: wrong nginx block, SELinux, webroot permissions"
   return 1
 }
 
@@ -364,9 +369,12 @@ cmd_ssl_api() {
     exit 1
   fi
 
-  if ! dns_has_a_record "${API_DOMAIN}"; then
-    echo "  ✗ ${API_DOMAIN} still has no A record."
-    exit 1
+  if dns_has_a_record "${API_DOMAIN}"; then
+    echo "  ✓ ${API_DOMAIN} → $(dns_lookup_ip "${API_DOMAIN}")"
+  else
+    echo "  ⚠ Local DNS cannot resolve ${API_DOMAIN}"
+    echo "    (Sunucu dış DNS'e erişemiyor olabilir — devam ediliyor)"
+    echo "    Certbot internet üzerinden doğrular; global DNS yeterli."
   fi
 
   prepare_webroot
@@ -387,11 +395,34 @@ cmd_ssl_api() {
     --agree-tos \
     --register-unsafely-without-email
 
+  ensure_ssl_options
   install_ssl_configs
   nginx_test_reload
 
   echo ""
   echo "✅ Certificate expanded. https://${API_DOMAIN}/health"
+}
+
+cmd_sync() {
+  require_root
+  echo "=== Sync Veridian nginx configs from repo ==="
+
+  prepare_webroot
+  install_upstreams
+
+  if [[ -f /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ]]; then
+    install_ssl_configs
+    echo "  SSL configs deployed"
+  else
+    cp "${SITES_SRC}/veridian-frontend-http.conf" \
+      "${NGINX_CONF_DIR}/zz-veridian-frontend-http.conf"
+    cp "${SITES_SRC}/veridian-api-http.conf" \
+      "${NGINX_CONF_DIR}/zz-veridian-api-http.conf"
+    echo "  HTTP configs deployed (no cert yet)"
+  fi
+
+  nginx_test_reload
+  echo "✅ Nginx configs synced."
 }
 
 cmd_diagnose() {
@@ -486,15 +517,17 @@ case "${1:-}" in
   install)   cmd_install ;;
   ssl)       cmd_ssl ;;
   ssl-api)   cmd_ssl_api ;;
+  sync)      cmd_sync ;;
   diagnose)  cmd_diagnose ;;
   remove)    cmd_remove ;;
   status)    cmd_status ;;
   *)
-    echo "Usage: setup-nginx.sh {install|ssl|ssl-api|diagnose|remove|status}"
+    echo "Usage: setup-nginx.sh {install|ssl|ssl-api|sync|diagnose|remove|status}"
     echo ""
     echo "  install   — add HTTP proxy (safe, no other configs touched)"
     echo "  ssl       — certbot webroot + HTTPS (main domain; API if DNS ready)"
     echo "  ssl-api   — expand cert after api.* DNS is added"
+    echo "  sync      — redeploy nginx configs from repo (no certbot)"
     echo "  diagnose  — DNS, webroot, duplicate server_name checks"
     echo "  remove    — remove only Veridian configs"
     echo "  status    — show Veridian nginx file status"
