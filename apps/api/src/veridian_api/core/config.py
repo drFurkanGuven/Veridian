@@ -79,7 +79,15 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.api_cors_origins.split(",") if origin.strip()]
+        origins: list[str] = []
+        seen: set[str] = set()
+        for raw in (self.app_url, self.api_cors_origins):
+            for part in raw.split(","):
+                origin = part.strip().rstrip("/")
+                if origin and origin not in seen:
+                    seen.add(origin)
+                    origins.append(origin)
+        return origins
 
 
 @lru_cache

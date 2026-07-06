@@ -6,9 +6,10 @@ from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import Response
 
 from veridian_api.core.config import get_settings
+from veridian_api.core.cors import cors_json_response
 from veridian_api.core.exceptions import RateLimitError
 from veridian_api.infrastructure.cache.rate_limiter import RateLimiter
 
@@ -72,10 +73,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_key = f"{_client_ip(request)}:{request.url.path}"
-        allowed, retry_after = await self._rate_limiter.check_request(client_key)
+        try:
+            allowed, retry_after = await self._rate_limiter.check_request(client_key)
+        except Exception:
+            logger.exception("Rate limiter unavailable — allowing request")
+            return await call_next(request)
+
         if not allowed:
             error = RateLimitError(retry_after=retry_after)
-            return JSONResponse(
+            return cors_json_response(
+                request,
                 status_code=error.status_code,
                 content={
                     "detail": error.message,

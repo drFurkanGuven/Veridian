@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from fastapi import Request
@@ -7,7 +8,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from veridian_api.core.cors import cors_json_response
 from veridian_api.core.exceptions import AppError, RateLimitError
+
+logger = logging.getLogger(__name__)
 
 
 def _error_body(
@@ -38,7 +42,8 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     if isinstance(exc, RateLimitError):
         headers["Retry-After"] = str(exc.retry_after)
 
-    return JSONResponse(
+    return cors_json_response(
+        request,
         status_code=exc.status_code,
         content=_error_body(
             detail=exc.message,
@@ -52,7 +57,8 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    return JSONResponse(
+    return cors_json_response(
+        request,
         status_code=422,
         content=_error_body(
             detail="Request validation failed",
@@ -66,7 +72,8 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-    return JSONResponse(
+    return cors_json_response(
+        request,
         status_code=exc.status_code,
         content=_error_body(
             detail=str(exc.detail),
@@ -79,7 +86,9 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(
+    logger.exception("Unhandled error [%s] %s", _request_id(request), request.url.path)
+    return cors_json_response(
+        request,
         status_code=500,
         content=_error_body(
             detail="Internal server error",
