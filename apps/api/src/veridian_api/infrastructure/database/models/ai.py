@@ -4,12 +4,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from veridian_api.domain.enums import AiMessageRole
-from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 
 if TYPE_CHECKING:
     from veridian_api.infrastructure.database.models.project import Project
@@ -49,7 +49,7 @@ class AiMessage(Base, UUIDPrimaryKeyMixin):
         index=True,
     )
     role: Mapped[AiMessageRole] = mapped_column(
-        Enum(AiMessageRole, name="ai_message_role", native_enum=False),
+        str_enum(AiMessageRole, "ai_message_role"),
         nullable=False,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)

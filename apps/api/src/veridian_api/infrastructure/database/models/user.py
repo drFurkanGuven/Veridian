@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from veridian_api.domain.enums import UserRole
-from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 
 if TYPE_CHECKING:
     from veridian_api.infrastructure.database.models.ai import AiConversation
@@ -25,7 +25,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role", native_enum=False),
+        str_enum(UserRole, "user_role"),
         default=UserRole.USER,
         nullable=False,
         index=True,

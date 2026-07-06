@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from veridian_api.domain.enums import OAuthProvider
-from veridian_api.infrastructure.database.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
+from veridian_api.infrastructure.database.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin, str_enum
 
 if TYPE_CHECKING:
     from veridian_api.infrastructure.database.models.user import User
@@ -26,7 +26,7 @@ class OAuthAccount(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         index=True,
     )
     provider: Mapped[OAuthProvider] = mapped_column(
-        Enum(OAuthProvider, name="oauth_provider", native_enum=False),
+        str_enum(OAuthProvider, "oauth_provider"),
         nullable=False,
     )
     provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)

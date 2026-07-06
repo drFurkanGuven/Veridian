@@ -1,13 +1,24 @@
 from datetime import datetime
+import enum
 from uuid import UUID as PyUUID, uuid4
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, Enum, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+def str_enum(enum_cls: type[enum.Enum], name: str) -> Enum:
+    """Store Python str enums by value (e.g. 'user'), not member name (USER)."""
+    return Enum(
+        enum_cls,
+        name=name,
+        native_enum=False,
+        values_callable=lambda members: [member.value for member in members],
+    )
 
 
 class UUIDPrimaryKeyMixin:

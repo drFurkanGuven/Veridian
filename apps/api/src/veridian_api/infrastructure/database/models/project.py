@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from veridian_api.domain.enums import FpgaTarget, Toolchain
-from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 
 if TYPE_CHECKING:
     from veridian_api.infrastructure.database.models.ai import AiConversation
@@ -29,12 +29,12 @@ class Project(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     target_fpga: Mapped[FpgaTarget] = mapped_column(
-        Enum(FpgaTarget, name="fpga_target", native_enum=False),
+        str_enum(FpgaTarget, "fpga_target"),
         default=FpgaTarget.GENERIC,
         nullable=False,
     )
     toolchain: Mapped[Toolchain] = mapped_column(
-        Enum(Toolchain, name="toolchain", native_enum=False),
+        str_enum(Toolchain, "toolchain"),
         default=Toolchain.YOSYS_NEXTPNR,
         nullable=False,
     )

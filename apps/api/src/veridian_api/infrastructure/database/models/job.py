@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, SmallInteger, String, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, SmallInteger, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from veridian_api.domain.enums import ArtifactType, JobStatus, JobType, LogLevel, Simulator, Toolchain
-from veridian_api.infrastructure.database.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
+from veridian_api.infrastructure.database.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin, str_enum
 
 if TYPE_CHECKING:
     from veridian_api.infrastructure.database.models.file import File
@@ -31,13 +31,13 @@ class CompilationJob(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         index=True,
     )
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status", native_enum=False),
+        str_enum(JobStatus, "job_status"),
         default=JobStatus.WAITING,
         nullable=False,
         index=True,
     )
     toolchain: Mapped[Toolchain] = mapped_column(
-        Enum(Toolchain, name="project_toolchain", native_enum=False),
+        str_enum(Toolchain, "project_toolchain"),
         nullable=False,
     )
     top_module: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -71,13 +71,13 @@ class SimulationJob(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         index=True,
     )
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status", native_enum=False),
+        str_enum(JobStatus, "job_status"),
         default=JobStatus.WAITING,
         nullable=False,
         index=True,
     )
     simulator: Mapped[Simulator] = mapped_column(
-        Enum(Simulator, name="simulator", native_enum=False),
+        str_enum(Simulator, "simulator"),
         nullable=False,
     )
     testbench_file_id: Mapped[UUID] = mapped_column(
@@ -101,13 +101,13 @@ class Artifact(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
 
     job_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
     job_type: Mapped[JobType] = mapped_column(
-        Enum(JobType, name="job_type", native_enum=False),
+        str_enum(JobType, "job_type"),
         nullable=False,
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     artifact_type: Mapped[ArtifactType] = mapped_column(
-        Enum(ArtifactType, name="artifact_type", native_enum=False),
+        str_enum(ArtifactType, "artifact_type"),
         nullable=False,
     )
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
@@ -122,12 +122,12 @@ class JobLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     job_id: Mapped[UUID] = mapped_column(nullable=False)
     job_type: Mapped[JobType] = mapped_column(
-        Enum(JobType, name="job_log_type", native_enum=False),
+        str_enum(JobType, "job_log_type"),
         nullable=False,
     )
     sequence: Mapped[int] = mapped_column(nullable=False)
     level: Mapped[LogLevel] = mapped_column(
-        Enum(LogLevel, name="log_level", native_enum=False),
+        str_enum(LogLevel, "log_level"),
         nullable=False,
     )
     message: Mapped[str] = mapped_column(Text, nullable=False)

@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, JSON, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from veridian_api.domain.enums import AuditEventType
-from veridian_api.infrastructure.database.base import Base
+from veridian_api.infrastructure.database.base import Base, str_enum
 
 if TYPE_CHECKING:
     pass
@@ -33,7 +33,7 @@ class AuditLog(Base):
         index=True,
     )
     event_type: Mapped[AuditEventType] = mapped_column(
-        Enum(AuditEventType, name="audit_event_type", native_enum=False),
+        str_enum(AuditEventType, "audit_event_type"),
         nullable=False,
         index=True,
     )

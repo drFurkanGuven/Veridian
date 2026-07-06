@@ -15,6 +15,17 @@ from veridian_api.infrastructure.database.models import (  # noqa: F401
 )
 
 
+from veridian_api.domain.enums import UserRole
+from veridian_api.infrastructure.database.base import str_enum
+
+
+def test_str_enum_uses_lowercase_values() -> None:
+    column_type = str_enum(UserRole, "user_role")
+    assert column_type.enums == ["user", "admin"]
+    assert column_type._object_value_for_elem("user") is UserRole.USER
+    assert column_type._object_value_for_elem("admin") is UserRole.ADMIN
+
+
 def test_metadata_contains_all_tables() -> None:
     table_names = set(Base.metadata.tables.keys())
     expected = {

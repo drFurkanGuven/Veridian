@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from veridian_api.domain.enums import HdlLanguage
-from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from veridian_api.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 
 if TYPE_CHECKING:
     from veridian_api.infrastructure.database.models.project import Project
@@ -56,7 +56,7 @@ class File(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     path: Mapped[str] = mapped_column(Text, nullable=False)
     language: Mapped[HdlLanguage] = mapped_column(
-        Enum(HdlLanguage, name="hdl_language", native_enum=False),
+        str_enum(HdlLanguage, "hdl_language"),
         nullable=False,
     )
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
