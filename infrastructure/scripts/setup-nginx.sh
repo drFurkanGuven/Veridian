@@ -59,12 +59,42 @@ prepare_webroot() {
 
 dns_has_a_record() {
   local host="$1"
+  local ip=""
+
   if command -v dig >/dev/null 2>&1; then
-    dig +short A "${host}" | grep -qE '^[0-9]+\.'
-  elif command -v host >/dev/null 2>&1; then
+    # Yerel resolver (systemd-resolved negatif cache tutabilir)
+    ip="$(dig +short A "${host}" 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
+    if [[ -n "${ip}" ]]; then
+      return 0
+    fi
+    # Önbelleği bypass et — doğrudan public DNS
+    ip="$(dig +short A "${host}" @8.8.8.8 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
+    if [[ -n "${ip}" ]]; then
+      return 0
+    fi
+    # Authoritative (Namecheap)
+    ip="$(dig +short A "${host}" @dns1.registrar-servers.com 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
+    [[ -n "${ip}" ]]
+    return
+  fi
+
+  if command -v host >/dev/null 2>&1; then
     host -t A "${host}" 2>/dev/null | grep -q "has address"
-  else
-    getent ahosts "${host}" 2>/dev/null | grep -q STREAM
+    return
+  fi
+
+  getent ahosts "${host}" 2>/dev/null | grep -q STREAM
+}
+
+dns_lookup_ip() {
+  local host="$1"
+  local ip=""
+  if command -v dig >/dev/null 2>&1; then
+    ip="$(dig +short A "${host}" 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
+    [[ -n "${ip}" ]] && echo "${ip}" && return
+    ip="$(dig +short A "${host}" @8.8.8.8 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
+    [[ -n "${ip}" ]] && echo "${ip}" && return
+    dig +short A "${host}" @dns1.registrar-servers.com 2>/dev/null | grep -E '^[0-9]+\.' | head -1
   fi
 }
 
@@ -88,15 +118,42 @@ list_server_name_configs() {
 
 check_duplicate_server_name() {
   local name="$1"
-  local count
-  count="$(count_server_name_blocks "${name}")"
-  if [[ "${count}" -gt 1 ]]; then
-    echo "  ⚠ WARNING: '${name}' appears ${count} times in nginx config."
-    echo "    Config files:"
-    list_server_name_configs "${name}" | sed 's/^/      /'
-    return 1
+  local files external=0
+  files="$(list_server_name_configs "${name}")"
+
+  while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    if [[ "${f}" != *"zz-veridian"* ]]; then
+      echo "  ⚠ WARNING: '${name}' also defined in ${f}"
+      external=1
+    fi
+  done <<< "${files}"
+
+  return "${external}"
+}
+
+report_server_name_blocks() {
+  local host="$1"
+  local files count
+  files="$(list_server_name_configs "${host}")"
+  count="$(echo "${files}" | grep -c . || true)"
+
+  if [[ "${count}" -eq 0 ]]; then
+    echo "  ✗ ${host} (no nginx block)"
+    return
   fi
-  return 0
+
+  if check_duplicate_server_name "${host}"; then
+    if [[ "${count}" -le 2 ]]; then
+      echo "  ✓ ${host} (HTTP + HTTPS — normal)"
+    else
+      echo "  ? ${host} (${count} blocks)"
+    fi
+  else
+    echo "  ✗ ${host} (conflict with another site config)"
+  fi
+
+  echo "${files}" | sed 's/^/      /'
 }
 
 test_acme_webroot() {
@@ -346,10 +403,17 @@ cmd_diagnose() {
   for host in "${DOMAIN}" "${API_DOMAIN}"; do
     if dns_has_a_record "${host}"; then
       local ip
-      ip="$(dig +short A "${host}" 2>/dev/null | head -1 || true)"
+      ip="$(dns_lookup_ip "${host}")"
       echo "  ✓ ${host} → ${ip:-?}"
     else
-      echo "  ✗ ${host} — no A record"
+      echo "  ✗ ${host} — no A record (local resolver)"
+      if command -v dig >/dev/null 2>&1; then
+        local pub_ip
+        pub_ip="$(dig +short A "${host}" @8.8.8.8 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || true)"
+        if [[ -n "${pub_ip}" ]]; then
+          echo "    (public DNS @8.8.8.8 sees: ${pub_ip} — local cache stale, ssl-api will still work)"
+        fi
+      fi
     fi
   done
 
@@ -365,16 +429,8 @@ cmd_diagnose() {
 
   echo ""
   echo "server_name blocks:"
-  for host in "${DOMAIN}" "${API_DOMAIN}"; do
-    local count
-    count="$(count_server_name_blocks "${host}")"
-    if [[ "${count}" -le 1 ]]; then
-      echo "  ✓ ${host} (${count} block)"
-    else
-      echo "  ✗ ${host} (${count} blocks — DUPLICATE, may cause 403)"
-    fi
-    list_server_name_configs "${host}" | sed 's/^/      /'
-  done
+  report_server_name_blocks "${DOMAIN}"
+  report_server_name_blocks "${API_DOMAIN}"
 
   echo ""
   echo "ACME webroot test:"
