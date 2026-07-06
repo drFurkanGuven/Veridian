@@ -19,6 +19,7 @@
     "infra:wait": "bash infrastructure/scripts/wait-for-services.sh",
     "infra:reset": "bash infrastructure/scripts/reset.sh",
     "infra:ports": "bash infrastructure/scripts/check-ports.sh",
+    "infra:status": "bash infrastructure/scripts/status.sh",
     "db:migrate": "bash infrastructure/scripts/migrate.sh",
     "db:setup": "bash infrastructure/scripts/setup-host-postgres.sh",
     "db:alembic": "bash infrastructure/scripts/alembic.sh"
