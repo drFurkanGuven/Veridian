@@ -1,0 +1,19 @@
+[Unit]
+Description=Veridian Web (Next.js)
+After=network.target veridian-api.service
+Wants=veridian-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/Veridian/apps/web/.next/standalone
+EnvironmentFile=/opt/Veridian/.env
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/node apps/web/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

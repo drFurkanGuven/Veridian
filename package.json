@@ -22,7 +22,9 @@
     "infra:status": "bash infrastructure/scripts/status.sh",
     "db:migrate": "bash infrastructure/scripts/migrate.sh",
     "db:setup": "bash infrastructure/scripts/setup-host-postgres.sh",
-    "db:alembic": "bash infrastructure/scripts/alembic.sh"
+    "db:alembic": "bash infrastructure/scripts/alembic.sh",
+    "build:prod": "bash infrastructure/scripts/build-production.sh",
+    "setup:prod": "bash infrastructure/scripts/setup-production.sh"
   },
   "devDependencies": {
     "typescript-eslint": "^8.18.0",
