@@ -31,6 +31,25 @@ export interface RefreshTokenRequest {
   refreshToken: string;
 }
 
+export interface AuthResponse {
+  user: User;
+  tokens: AuthTokens;
+}
+
+export interface OAuthUrlResponse {
+  url: string;
+  state: string;
+}
+
+export interface OAuthCallbackRequest {
+  code: string;
+  state: string;
+}
+
+export interface LogoutRequest {
+  refreshToken: string;
+}
+
 export interface ApiError {
   detail: string;
   code?: string;

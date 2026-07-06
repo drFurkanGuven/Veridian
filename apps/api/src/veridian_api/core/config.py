@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 7
 
+    app_url: str = "http://localhost:3000"
+
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
+
     database_url: str = "postgresql+asyncpg://veridian:veridian@localhost:5432/veridian"
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "amqp://veridian:veridian@localhost:5672//"

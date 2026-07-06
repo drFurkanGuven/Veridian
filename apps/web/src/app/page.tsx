@@ -1,4 +1,5 @@
 import type { JobStatus } from '@veridian/shared-types';
+import Link from 'next/link';
 
 const API_PUBLIC_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 const API_SERVER_URL = process.env.API_INTERNAL_URL ?? API_PUBLIC_URL;
@@ -28,6 +29,14 @@ export default async function HomePage() {
           <p className="text-ide-muted">
             The cloud IDE for HDL — Verilog, SystemVerilog, VHDL, synthesis, and simulation.
           </p>
+          <div className="flex justify-center gap-4 pt-2 text-sm">
+            <Link href="/login" className="text-white underline">
+              Sign in
+            </Link>
+            <Link href="/register" className="text-ide-muted underline hover:text-white">
+              Register
+            </Link>
+          </div>
         </header>
 
         <section className="rounded-lg border border-ide-border bg-ide-sidebar p-6">
@@ -68,7 +77,7 @@ export default async function HomePage() {
         </section>
 
         <footer className="text-center text-xs text-ide-muted">
-          Phase 0 — Monorepo scaffolding complete. Authentication module next.
+          Phase 5 — Authentication live. Projects module next.
         </footer>
       </div>
     </main>
