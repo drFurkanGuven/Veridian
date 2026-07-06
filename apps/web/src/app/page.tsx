@@ -36,6 +36,9 @@ export default async function HomePage() {
             <Link href="/register" className="text-ide-muted underline hover:text-white">
               Register
             </Link>
+            <Link href="/projects" className="text-ide-muted underline hover:text-white">
+              Projects
+            </Link>
           </div>
         </header>
 
@@ -77,7 +80,7 @@ export default async function HomePage() {
         </section>
 
         <footer className="text-center text-xs text-ide-muted">
-          Phase 5 — Authentication live. Projects module next.
+          Phase 6 — Projects live. File tree module next.
         </footer>
       </div>
     </main>
