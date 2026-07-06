@@ -3,7 +3,7 @@
 #
 # Usage: pnpm infra:up:host
 
-name: veridian-host
+name: veridian
 
 services:
   rabbitmq:

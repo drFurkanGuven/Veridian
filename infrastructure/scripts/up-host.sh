@@ -28,11 +28,13 @@ echo "  Redis      → host localhost:6379 (system service)"
 echo "  RabbitMQ   → Docker"
 echo "  MinIO      → Docker"
 echo ""
+echo "  NOTE: Do NOT run 'pnpm infra:up' on this server — use 'pnpm infra:up:host' only."
+echo ""
 
 docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up -d
 
 echo ""
-echo "Waiting for Docker services..."
-sleep 5
+HOST_INFRA=true "${ROOT_DIR}/infrastructure/scripts/wait-for-services.sh"
 
+echo ""
 "${ROOT_DIR}/infrastructure/scripts/verify-services.sh"

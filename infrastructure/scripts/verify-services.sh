@@ -35,11 +35,18 @@ check_tcp() {
 check_http() {
   local name="$1"
   local url="$2"
+  local retries="${3:-10}"
+  local delay="${4:-3}"
 
-  if curl -sf "${url}" >/dev/null 2>&1; then
-    echo "  ✓ ${name} (${url})"
-    return 0
-  fi
+  for ((i = 1; i <= retries; i++)); do
+    if curl -sf "${url}" >/dev/null 2>&1; then
+      echo "  ✓ ${name} (${url})"
+      return 0
+    fi
+    if [[ "${i}" -lt "${retries}" ]]; then
+      sleep "${delay}"
+    fi
+  done
 
   echo "  ✗ ${name} (${url}) — not reachable"
   return 1
@@ -54,7 +61,7 @@ check_tcp "PostgreSQL" "localhost" "${POSTGRES_PORT}" || failed=$((failed + 1))
 check_tcp "Redis" "localhost" "${REDIS_PORT}" || failed=$((failed + 1))
 check_tcp "RabbitMQ AMQP" "localhost" "${RABBITMQ_PORT}" || failed=$((failed + 1))
 check_tcp "MinIO API" "localhost" "${MINIO_API_PORT}" || failed=$((failed + 1))
-check_http "RabbitMQ Management" "http://localhost:${RABBITMQ_MANAGEMENT_PORT}" || failed=$((failed + 1))
+check_http "RabbitMQ Management" "http://localhost:${RABBITMQ_MANAGEMENT_PORT}" 20 3 || failed=$((failed + 1))
 check_http "MinIO Health" "http://localhost:${MINIO_API_PORT}/minio/health/live" || failed=$((failed + 1))
 
 echo ""

@@ -22,6 +22,18 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   cp "${ROOT_DIR}/.env.example" "${ENV_FILE}"
 fi
 
+if (echo >"/dev/tcp/localhost/5432") >/dev/null 2>&1 && (echo >"/dev/tcp/localhost/6379") >/dev/null 2>&1; then
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qE 'veridian-(minio|rabbitmq)'; then
+    echo "ERROR: Host PostgreSQL/Redis are in use and Veridian Docker services are already running."
+    echo "       Use: pnpm infra:up:host   (NOT pnpm infra:up)"
+    echo "       Stop: pnpm infra:down:host"
+    exit 1
+  fi
+  echo "WARNING: Ports 5432 and 6379 are in use on the host."
+  echo "         Prefer: pnpm infra:up:host"
+  echo ""
+fi
+
 echo "Starting Veridian infrastructure..."
 docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up -d
 
