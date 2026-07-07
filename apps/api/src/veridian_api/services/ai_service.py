@@ -22,6 +22,10 @@ from veridian_api.services.project_service import ProjectService
 _SYSTEM_PROMPT = """You are Veridian AI, an expert FPGA and HDL development assistant embedded in a cloud IDE.
 Help users with Verilog, SystemVerilog, VHDL, testbenches, synthesis constraints, and simulation debugging.
 Prefer concrete, actionable answers. When suggesting code, keep it minimal and syntactically correct.
+CRITICAL TOOLING RULES:
+- If you are asked to create/update files, you MUST use the tool blocks below. Plain text (including shell commands) will NOT modify the project.
+- Do NOT output compile/run shell commands (like iverilog, vlog, vsim) unless the user explicitly asks for commands.
+
 When the user asks you to fix, rewrite, or generate the active file, write the full updated file using:
 ```veridian-write-file
 <full file contents>
@@ -171,6 +175,48 @@ class AiService:
 
         assistant_raw = "".join(assistant_parts).strip() or "No response."
         actions = extract_ai_actions(assistant_raw)
+
+        # Cursor-like behavior: if the user asked for file creation/updates but the model
+        # replied with plain text (e.g. shell commands), do one automatic retry requesting
+        # ONLY tool blocks so the IDE can apply changes.
+        def _tool_required(user_text: str) -> bool:
+            lowered = user_text.lower()
+            triggers = [
+                "create file",
+                "new file",
+                "write file",
+                "add file",
+                "dosya",
+                "oluştur",
+                "ekle",
+                "yaz",
+                "testbench",
+                "tb",
+            ]
+            return any(token in lowered for token in triggers)
+
+        if not actions and _tool_required(text) and conversation.project_id is not None:
+            retry_messages = list(messages)
+            retry_messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Return ONLY veridian tool blocks that write files into the project. "
+                        "Do not include explanations or shell commands. "
+                        "Use:\n```veridian-write-file <path>\n<full file contents>\n```"
+                    ),
+                }
+            )
+            retry_parts: list[str] = []
+            async for chunk in self._openai.stream_chat(retry_messages):
+                retry_parts.append(chunk)
+                yield chunk
+            retry_raw = "".join(retry_parts).strip()
+            retry_actions = extract_ai_actions(retry_raw)
+            if retry_actions:
+                assistant_raw = "\n\n".join([assistant_raw, retry_raw]).strip()
+                actions = retry_actions
+
         assistant_text = strip_action_blocks(assistant_raw) or (
             "Applied code changes to the active file." if actions else assistant_raw
         )

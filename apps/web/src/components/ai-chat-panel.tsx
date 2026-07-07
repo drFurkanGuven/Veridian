@@ -85,7 +85,10 @@ const QUICK_PROMPTS = [
   { label: 'Add $dumpfile to this testbench', prompt: 'Add $dumpfile to this testbench' },
   {
     label: 'Create testbench file',
-    prompt: 'Create a new testbench file for the open design and write it to the project.',
+    prompt:
+      'Create a new testbench file and write it into the project using a tool block. ' +
+      'Use exactly this format and pick a correct path like tb/tb_top.v:\n' +
+      '```veridian-write-file tb/tb_top.v\n<full file contents>\n```',
   },
 ];
 
@@ -255,7 +258,11 @@ export function AiChatPanel({
                 ? {
                     ...message,
                     id: messageId || message.id,
-                    content: stripToolBlocks(message.content) || message.content,
+                    content:
+                      stripToolBlocks(message.content) ||
+                      (actions.length === 0 && onWriteFile
+                        ? `${message.content}\n\nNote: AI did not return a veridian-write-file tool block, so no files were created/updated. Ask it to output a veridian-write-file <path> block.`
+                        : message.content),
                     streaming: false,
                     autoApplied: autoApplied || paths.length > 0,
                     appliedPaths: paths,
