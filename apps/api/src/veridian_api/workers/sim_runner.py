@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from veridian_api.core.config import Settings, get_settings
 from veridian_api.core.urls import artifact_download_url
 from veridian_api.domain.enums import ArtifactType, HdlLanguage, JobStatus, JobType, LogLevel, Simulator
+from veridian_api.domain.vcd_injection import ensure_vcd_dump, find_vcd_output, infer_module_name
 from veridian_api.infrastructure.database.models.file import File
 from veridian_api.infrastructure.database.models.job import Artifact, JobLog, SimulationJob
 from veridian_api.infrastructure.database.session import async_session_factory
@@ -74,8 +75,19 @@ async def _execute_simulation(session, job_id: UUID, settings: Settings) -> None
         work_dir = Path(tmp)
         for file in hdl_files:
             content = await storage.get_bytes(file.storage_key)
+            text = content.decode("utf-8")
+            if file.id == testbench.id:
+                module_name = infer_module_name(text, job.top_module)
+                text, injected = ensure_vcd_dump(text, module_name)
+                if injected:
+                    await _append_log(
+                        session,
+                        job,
+                        LogLevel.INFO,
+                        f"Auto-injected $dumpfile(\"dump.vcd\") into {testbench.path}",
+                    )
             dest = work_dir / Path(file.path).name
-            dest.write_bytes(content)
+            dest.write_text(text, encoding="utf-8")
             await _append_log(session, job, LogLevel.INFO, f"Staged {file.path}")
 
         await _set_status(session, job, JobStatus.RUNNING, progress=50)
@@ -86,8 +98,16 @@ async def _execute_simulation(session, job_id: UUID, settings: Settings) -> None
             job.simulator,
         )
         log_lines.extend(tool_log)
-        if vcd_path and vcd_path.exists():
-            vcd_bytes = vcd_path.read_bytes()
+        resolved_vcd = vcd_path if vcd_path and vcd_path.exists() else find_vcd_output(work_dir)
+        if resolved_vcd is not None:
+            vcd_bytes = resolved_vcd.read_bytes()
+        elif any("No VCD output" in line for line in tool_log):
+            await _append_log(
+                session,
+                job,
+                LogLevel.WARN,
+                "No waveform generated. Check that simulation ran and the testbench executes.",
+            )
 
     for line in tool_log:
         level = LogLevel.ERROR if "error" in line.lower() else LogLevel.INFO
@@ -126,6 +146,14 @@ async def _execute_simulation(session, job_id: UUID, settings: Settings) -> None
         session.add(vcd_artifact)
         await session.flush()
         await _publish_artifact(job.id, vcd_artifact, settings)
+        await _append_log(session, job, LogLevel.INFO, f"Waveform saved ({len(vcd_bytes)} bytes)")
+    else:
+        await _append_log(
+            session,
+            job,
+            LogLevel.WARN,
+            "No VCD waveform artifact was produced for this simulation.",
+        )
 
     if success:
         job.status = JobStatus.SUCCESS
@@ -175,12 +203,17 @@ def _run_simulator(
             logs.append(f"vvp exited with code {proc.returncode}")
             return False, logs, None
 
-        if vcd_path.exists():
+        if vcd_path.exists() and vcd_path.stat().st_size > 0:
             logs.append("VCD waveform captured")
         else:
-            logs.append("No VCD output (testbench may not call $dumpfile)")
+            found = find_vcd_output(work_dir)
+            if found is not None:
+                logs.append(f"VCD waveform captured ({found.name})")
+                vcd_path = found
+            else:
+                logs.append("No VCD output (testbench may not call $dumpfile)")
         logs.append("Simulation completed successfully")
-        return True, logs, vcd_path if vcd_path.exists() else None
+        return True, logs, vcd_path if vcd_path.exists() and vcd_path.stat().st_size > 0 else find_vcd_output(work_dir)
 
     logs.append("iverilog/vvp not installed on server — dry-run OK")
     logs.append(f"Would simulate: {', '.join(p.name for p in work_dir.iterdir())}")
