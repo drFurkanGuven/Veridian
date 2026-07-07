@@ -159,7 +159,7 @@ pnpm db:alembic downgrade -1  # Roll back one revision
 | 10 | Account security & audit | ✅ Complete |
 | 11 | Waveform viewer | ✅ Complete |
 | 12 | Monaco editor | ✅ Complete |
-| ... | AI module | Pending |
+| 13 | AI assistant | ✅ Complete |
 
 ## License
 

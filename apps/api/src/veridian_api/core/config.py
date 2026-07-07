@@ -68,6 +68,14 @@ class Settings(BaseSettings):
     rate_limit_ai_requests_per_minute: int = 20
     rate_limit_enabled: bool = True
 
+    openai_api_key: str = ""
+    ai_model: str = "gpt-4o"
+    ai_max_context_tokens: int = 32000
+
+    @property
+    def ai_enabled(self) -> bool:
+        return bool(self.openai_api_key.strip())
+
     auth_max_login_attempts: int = 5
     auth_lockout_minutes: int = 15
     auth_min_password_length: int = 8

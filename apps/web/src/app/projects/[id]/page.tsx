@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { AiChatPanel } from '@/components/ai-chat-panel';
 import { CodeEditor } from '@/components/code-editor';
 import { WaveformViewer } from '@/components/waveform-viewer';
 
@@ -35,7 +36,7 @@ import {
 import { isLoggedIn } from '@/lib/projects-api';
 
 type BuildMode = 'compile' | 'simulate';
-type CenterTab = 'editor' | 'waveform';
+type CenterTab = 'editor' | 'waveform' | 'ai';
 
 function collectFiles(tree: ProjectTree): FileNode[] {
   const files = [...tree.rootFiles];
@@ -382,6 +383,15 @@ export default function ProjectDetailPage() {
             >
               Waveform
             </button>
+            <button
+              type="button"
+              onClick={() => setCenterTab('ai')}
+              className={`rounded px-2 py-1 text-xs ${
+                centerTab === 'ai' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
+              }`}
+            >
+              AI
+            </button>
             {waveformLoading && <span className="text-xs text-ide-muted">Loading VCD…</span>}
           </div>
 
@@ -403,6 +413,12 @@ export default function ProjectDetailPage() {
             ) : (
               <p className="text-ide-muted">Select a file or create a new one.</p>
             )
+          ) : centerTab === 'ai' ? (
+            <AiChatPanel
+              projectId={projectId}
+              activeFileId={selectedFile?.id}
+              activeFilePath={selectedFile?.path}
+            />
           ) : waveformSource ? (
             <WaveformViewer source={waveformSource} className="h-[70vh]" />
           ) : (
