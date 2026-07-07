@@ -23,6 +23,10 @@ export interface ArtifactMeta {
   createdAt: string;
 }
 
+export function isVcdArtifact(artifact: Pick<ArtifactMeta, 'artifactType' | 'name'>): boolean {
+  return artifact.artifactType === 'vcd' || artifact.name.endsWith('.vcd');
+}
+
 export interface CompilationJob {
   id: string;
   projectId: string;

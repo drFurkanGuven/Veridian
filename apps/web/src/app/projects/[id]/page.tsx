@@ -10,9 +10,12 @@ import type {
   ProjectTree,
   Simulator,
 } from '@veridian/shared-types';
+import { isVcdArtifact } from '@veridian/shared-types';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { WaveformViewer } from '@/components/waveform-viewer';
 
 import {
   createFile,
@@ -23,6 +26,7 @@ import {
 import {
   connectJobWebSocket,
   downloadArtifact,
+  fetchArtifactContent,
   getJobArtifacts,
   startCompilation,
   startSimulation,
@@ -30,6 +34,7 @@ import {
 import { isLoggedIn } from '@/lib/projects-api';
 
 type BuildMode = 'compile' | 'simulate';
+type CenterTab = 'editor' | 'waveform';
 
 function collectFiles(tree: ProjectTree): FileNode[] {
   const files = [...tree.rootFiles];
@@ -79,6 +84,9 @@ export default function ProjectDetailPage() {
   const [jobProgress, setJobProgress] = useState(0);
   const [jobLogs, setJobLogs] = useState<JobLogEntry[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactMeta[]>([]);
+  const [centerTab, setCenterTab] = useState<CenterTab>('editor');
+  const [waveformSource, setWaveformSource] = useState<string | null>(null);
+  const [waveformLoading, setWaveformLoading] = useState(false);
 
   const loadTree = useCallback(async () => {
     const data = await getProjectTree(projectId);
@@ -152,7 +160,23 @@ export default function ProjectDetailPage() {
     }
   }
 
+  async function openWaveform(artifact: ArtifactMeta) {
+    setWaveformLoading(true);
+    setError('');
+    try {
+      const content = await fetchArtifactContent(artifact.downloadUrl);
+      setWaveformSource(content);
+      setCenterTab('waveform');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load waveform');
+    } finally {
+      setWaveformLoading(false);
+    }
+  }
+
   async function startJob(jobId: string) {
+    setWaveformSource(null);
+    setCenterTab('editor');
     setJobLogs([]);
     setArtifacts([]);
     setJobStatus('waiting');
@@ -179,7 +203,13 @@ export default function ProjectDetailPage() {
         }
       },
       onArtifact: (artifact) => {
-        setArtifacts((prev) => [...prev, artifact]);
+        setArtifacts((prev) => {
+          if (prev.some((item) => item.id === artifact.id)) return prev;
+          return [...prev, artifact];
+        });
+        if (isVcdArtifact(artifact)) {
+          openWaveform(artifact).catch(() => undefined);
+        }
       },
     });
     wsRef.current = ws;
@@ -330,19 +360,48 @@ export default function ProjectDetailPage() {
           </ul>
         </aside>
 
-        <section className="border-r border-ide-border p-4">
-          {selectedFile ? (
-            <div className="h-full">
-              <p className="mb-2 font-mono text-xs text-ide-muted">{selectedFile.path}</p>
-              <textarea
-                value={editorValue}
-                onChange={(e) => setEditorValue(e.target.value)}
-                className="h-[70vh] w-full resize-none rounded border border-ide-border bg-ide-bg p-4 font-mono text-sm text-ide-text"
-                spellCheck={false}
-              />
-            </div>
+        <section className="flex min-h-0 flex-col border-r border-ide-border p-4">
+          <div className="mb-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setCenterTab('editor')}
+              className={`rounded px-2 py-1 text-xs ${
+                centerTab === 'editor' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
+              }`}
+            >
+              Editor
+            </button>
+            <button
+              type="button"
+              onClick={() => setCenterTab('waveform')}
+              disabled={!waveformSource && !waveformLoading}
+              className={`rounded px-2 py-1 text-xs ${
+                centerTab === 'waveform' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
+              } disabled:opacity-50`}
+            >
+              Waveform
+            </button>
+            {waveformLoading && <span className="text-xs text-ide-muted">Loading VCD…</span>}
+          </div>
+
+          {centerTab === 'editor' ? (
+            selectedFile ? (
+              <div className="h-full">
+                <p className="mb-2 font-mono text-xs text-ide-muted">{selectedFile.path}</p>
+                <textarea
+                  value={editorValue}
+                  onChange={(e) => setEditorValue(e.target.value)}
+                  className="h-[70vh] w-full resize-none rounded border border-ide-border bg-ide-bg p-4 font-mono text-sm text-ide-text"
+                  spellCheck={false}
+                />
+              </div>
+            ) : (
+              <p className="text-ide-muted">Select a file or create a new one.</p>
+            )
+          ) : waveformSource ? (
+            <WaveformViewer source={waveformSource} className="h-[70vh]" />
           ) : (
-            <p className="text-ide-muted">Select a file or create a new one.</p>
+            <p className="text-ide-muted">Run a simulation with VCD output to view waveforms.</p>
           )}
         </section>
 
@@ -379,6 +438,11 @@ export default function ProjectDetailPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto rounded border border-ide-border bg-ide-bg p-3 font-mono text-xs text-ide-muted">
+            {buildMode === 'simulate' && jobLogs.length === 0 && (
+              <p className="mb-2 text-yellow-400/90">
+                Testbench must call $dumpfile(&quot;dump.vcd&quot;) for waveform capture.
+              </p>
+            )}
             {jobLogs.length === 0 ? (
               <p>{buildMode === 'compile' ? 'Compile' : 'Simulation'} logs appear here.</p>
             ) : (
@@ -403,7 +467,21 @@ export default function ProjectDetailPage() {
               <h3 className="mb-2 text-xs font-semibold uppercase text-ide-muted">Artifacts</h3>
               <ul className="space-y-1 text-sm">
                 {artifacts.map((artifact) => (
-                  <li key={artifact.id}>
+                  <li key={artifact.id} className="flex flex-wrap items-center gap-2">
+                    <span className="text-ide-text">{artifact.name}</span>
+                    {isVcdArtifact(artifact) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openWaveform(artifact).catch((err: unknown) => {
+                            setError(err instanceof Error ? err.message : 'Failed to open waveform');
+                          });
+                        }}
+                        className="text-sky-400 underline"
+                      >
+                        View
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -413,7 +491,7 @@ export default function ProjectDetailPage() {
                       }}
                       className="text-emerald-400 underline"
                     >
-                      {artifact.name}
+                      Download
                     </button>
                   </li>
                 ))}

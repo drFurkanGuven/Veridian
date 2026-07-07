@@ -89,6 +89,12 @@ export async function getJobArtifacts(jobId: string): Promise<ArtifactMeta[]> {
   return data.items;
 }
 
+export async function fetchArtifactContent(downloadUrl: string): Promise<string> {
+  const response = await fetch(downloadUrl, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.text();
+}
+
 export async function downloadArtifact(downloadUrl: string, filename: string): Promise<void> {
   const response = await fetch(downloadUrl, { headers: authHeaders() });
   if (!response.ok) throw new Error(await parseError(response));
