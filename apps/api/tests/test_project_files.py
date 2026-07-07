@@ -15,3 +15,13 @@ async def client() -> AsyncClient:
 async def test_project_tree_requires_auth(client: AsyncClient) -> None:
     response = await client.get("/api/v1/projects/00000000-0000-0000-0000-000000000001/tree")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_rename_file_requires_auth(client: AsyncClient) -> None:
+    response = await client.patch(
+        "/api/v1/projects/00000000-0000-0000-0000-000000000001/files/"
+        "00000000-0000-0000-0000-000000000002",
+        json={"name": "renamed.v"},
+    )
+    assert response.status_code == 401

@@ -23,6 +23,7 @@ import {
   createFile,
   getFileContent,
   getProjectTree,
+  renameFile,
   updateFileContent,
 } from '@/lib/files-api';
 import {
@@ -35,8 +36,8 @@ import {
 } from '@/lib/jobs-api';
 import { isLoggedIn } from '@/lib/projects-api';
 
-type BuildMode = 'compile' | 'simulate';
-type CenterTab = 'editor' | 'waveform' | 'ai';
+type RightPanel = 'compile' | 'simulate' | 'ai';
+type CenterTab = 'editor' | 'waveform';
 
 function collectFiles(tree: ProjectTree): FileNode[] {
   const files = [...tree.rootFiles];
@@ -48,6 +49,11 @@ function collectFiles(tree: ProjectTree): FileNode[] {
   };
   walk(tree.rootFolders);
   return files;
+}
+
+function fileBaseName(path: string): string {
+  const parts = path.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? path;
 }
 
 function statusColor(status: JobStatus): string {
@@ -76,8 +82,10 @@ export default function ProjectDetailPage() {
   const [editorValue, setEditorValue] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
 
-  const [buildMode, setBuildMode] = useState<BuildMode>('compile');
+  const [rightPanel, setRightPanel] = useState<RightPanel>('compile');
   const [topModule, setTopModule] = useState('top');
   const [testbenchFileId, setTestbenchFileId] = useState('');
   const [simulator, setSimulator] = useState<Simulator>('icarus');
@@ -122,10 +130,12 @@ export default function ProjectDetailPage() {
 
   async function openFile(fileId: string) {
     setError('');
+    setEditingName(false);
     try {
       const content = await getFileContent(projectId, fileId);
       setSelectedFile(content);
       setEditorValue(content.content);
+      setNameDraft(fileBaseName(content.path));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open file');
     }
@@ -145,21 +155,55 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function handleSave() {
+  async function handleSave(contentOverride?: string) {
     if (!selectedFile) return;
+    const content = contentOverride ?? editorValue;
     setSaving(true);
     setError('');
     try {
       const updated = await updateFileContent(projectId, selectedFile.id, {
-        content: editorValue,
+        content,
         checksum: selectedFile.checksum,
       });
       setSelectedFile(updated);
+      setEditorValue(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save file');
     } finally {
       setSaving(false);
     }
+  }
+
+  async function commitRename() {
+    if (!selectedFile) return;
+    const trimmed = nameDraft.trim();
+    setEditingName(false);
+    if (!trimmed || trimmed === fileBaseName(selectedFile.path)) return;
+
+    setError('');
+    try {
+      const node = await renameFile(projectId, selectedFile.id, trimmed);
+      await loadTree();
+      setSelectedFile({
+        ...selectedFile,
+        path: node.path,
+        language: node.language,
+      });
+      setNameDraft(fileBaseName(node.path));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rename file');
+      setNameDraft(fileBaseName(selectedFile.path));
+    }
+  }
+
+  function handleApplyToEditor(content: string) {
+    setEditorValue(content);
+    setCenterTab('editor');
+  }
+
+  async function handleApplyAndSave(content: string) {
+    handleApplyToEditor(content);
+    await handleSave(content);
   }
 
   async function openWaveform(artifact: ArtifactMeta) {
@@ -218,6 +262,7 @@ export default function ProjectDetailPage() {
   }
 
   async function handleCompile() {
+    setRightPanel('compile');
     setError('');
     setJobRunning(true);
     try {
@@ -236,6 +281,7 @@ export default function ProjectDetailPage() {
       setError('Select a testbench file');
       return;
     }
+    setRightPanel('simulate');
     setError('');
     setJobRunning(true);
     try {
@@ -254,13 +300,13 @@ export default function ProjectDetailPage() {
   }
 
   const runLabel =
-    buildMode === 'compile'
+    rightPanel === 'simulate'
       ? jobRunning
-        ? 'Compiling…'
-        : 'Compile'
-      : jobRunning
         ? 'Simulating…'
-        : 'Simulate';
+        : 'Simulate'
+      : jobRunning
+        ? 'Compiling…'
+        : 'Compile';
 
   return (
     <main className="flex min-h-screen flex-col">
@@ -278,7 +324,7 @@ export default function ProjectDetailPage() {
               className="rounded border border-ide-border bg-ide-bg px-2 py-1 font-mono text-sm text-white"
             />
           </label>
-          {buildMode === 'simulate' && (
+          {rightPanel === 'simulate' && (
             <>
               <label className="flex items-center gap-2 text-sm text-ide-muted">
                 Testbench
@@ -308,14 +354,16 @@ export default function ProjectDetailPage() {
               </label>
             </>
           )}
-          <button
-            type="button"
-            onClick={buildMode === 'compile' ? handleCompile : handleSimulate}
-            disabled={jobRunning}
-            className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {runLabel}
-          </button>
+          {rightPanel !== 'ai' && (
+            <button
+              type="button"
+              onClick={rightPanel === 'simulate' ? handleSimulate : handleCompile}
+              disabled={jobRunning}
+              className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {runLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={handleCreateFile}
@@ -326,7 +374,7 @@ export default function ProjectDetailPage() {
           {selectedFile && (
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => handleSave()}
               disabled={saving}
               className="rounded bg-white px-3 py-1 text-sm font-medium text-black disabled:opacity-50"
             >
@@ -341,7 +389,7 @@ export default function ProjectDetailPage() {
 
       {error && <p className="px-6 py-2 text-sm text-red-400">{error}</p>}
 
-      <div className="grid flex-1 grid-cols-[240px_1fr_320px]">
+      <div className="grid min-h-0 flex-1 grid-cols-[240px_1fr_360px]">
         <aside className="border-r border-ide-border p-4">
           <h2 className="mb-3 text-xs font-semibold uppercase text-ide-muted">Files</h2>
           <ul className="space-y-1 text-sm">
@@ -383,42 +431,59 @@ export default function ProjectDetailPage() {
             >
               Waveform
             </button>
-            <button
-              type="button"
-              onClick={() => setCenterTab('ai')}
-              className={`rounded px-2 py-1 text-xs ${
-                centerTab === 'ai' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
-              }`}
-            >
-              AI
-            </button>
             {waveformLoading && <span className="text-xs text-ide-muted">Loading VCD…</span>}
           </div>
 
           {centerTab === 'editor' ? (
             selectedFile ? (
               <div className="flex h-full min-h-0 flex-col">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="font-mono text-xs text-ide-muted">{selectedFile.path}</p>
-                  <span className="text-xs uppercase text-ide-muted">{selectedFile.language}</span>
+                <div className="mb-2 flex items-center gap-2">
+                  {editingName ? (
+                    <input
+                      autoFocus
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onBlur={() => {
+                        commitRename().catch(() => undefined);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          commitRename().catch(() => undefined);
+                        }
+                        if (e.key === 'Escape') {
+                          setEditingName(false);
+                          setNameDraft(fileBaseName(selectedFile.path));
+                        }
+                      }}
+                      className="rounded border border-ide-accent bg-ide-bg px-2 py-0.5 font-mono text-sm text-white"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNameDraft(fileBaseName(selectedFile.path));
+                        setEditingName(true);
+                      }}
+                      className="font-mono text-sm text-white underline decoration-dotted hover:text-emerald-400"
+                      title="Click to rename"
+                    >
+                      {selectedFile.path}
+                    </button>
+                  )}
+                  <span className="ml-auto text-xs uppercase text-ide-muted">{selectedFile.language}</span>
                 </div>
                 <CodeEditor
                   value={editorValue}
                   language={selectedFile.language}
                   path={selectedFile.path}
                   onChange={setEditorValue}
-                  onSave={handleSave}
+                  onSave={() => handleSave()}
                 />
               </div>
             ) : (
               <p className="text-ide-muted">Select a file or create a new one.</p>
             )
-          ) : centerTab === 'ai' ? (
-            <AiChatPanel
-              projectId={projectId}
-              activeFileId={selectedFile?.id}
-              activeFilePath={selectedFile?.path}
-            />
           ) : waveformSource ? (
             <WaveformViewer source={waveformSource} className="h-[70vh]" />
           ) : (
@@ -426,98 +491,130 @@ export default function ProjectDetailPage() {
           )}
         </section>
 
-        <aside className="flex flex-col p-4">
+        <aside className="flex min-h-0 flex-col p-4">
           <div className="mb-3 flex gap-2">
             <button
               type="button"
-              onClick={() => setBuildMode('compile')}
+              onClick={() => setRightPanel('compile')}
               className={`rounded px-2 py-1 text-xs ${
-                buildMode === 'compile' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
+                rightPanel === 'compile' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
               }`}
             >
               Compile
             </button>
             <button
               type="button"
-              onClick={() => setBuildMode('simulate')}
+              onClick={() => setRightPanel('simulate')}
               className={`rounded px-2 py-1 text-xs ${
-                buildMode === 'simulate' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
+                rightPanel === 'simulate' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
               }`}
             >
               Simulate
             </button>
-            {jobStatus && (
+            <button
+              type="button"
+              onClick={() => setRightPanel('ai')}
+              className={`rounded px-2 py-1 text-xs ${
+                rightPanel === 'ai' ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
+              }`}
+            >
+              AI
+            </button>
+            {rightPanel !== 'ai' && jobStatus && (
               <span className={`ml-auto text-xs font-medium ${statusColor(jobStatus)}`}>
                 {jobStatus} {jobProgress > 0 ? `(${jobProgress}%)` : ''}
               </span>
             )}
           </div>
-          <div className="mb-4 h-1 overflow-hidden rounded bg-ide-sidebar">
-            <div
-              className="h-full bg-emerald-500 transition-all"
-              style={{ width: `${jobProgress}%` }}
+
+          {rightPanel === 'ai' ? (
+            <AiChatPanel
+              projectId={projectId}
+              activeFileId={selectedFile?.id}
+              activeFilePath={selectedFile?.path}
+              editorContent={editorValue}
+              onApplyToEditor={handleApplyToEditor}
+              onApplyAndSave={(content) => {
+                handleApplyAndSave(content).catch((err: unknown) => {
+                  setError(err instanceof Error ? err.message : 'Failed to save');
+                });
+              }}
+              className="min-h-0 flex-1"
             />
-          </div>
-          <div className="flex-1 overflow-y-auto rounded border border-ide-border bg-ide-bg p-3 font-mono text-xs text-ide-muted">
-            {buildMode === 'simulate' && jobLogs.length === 0 && (
-              <p className="mb-2 text-yellow-400/90">
-                Testbench must call $dumpfile(&quot;dump.vcd&quot;) for waveform capture.
-              </p>
-            )}
-            {jobLogs.length === 0 ? (
-              <p>{buildMode === 'compile' ? 'Compile' : 'Simulation'} logs appear here.</p>
-            ) : (
-              jobLogs.map((log) => (
-                <p
-                  key={log.sequence}
-                  className={
-                    log.level === 'error'
-                      ? 'text-red-400'
-                      : log.level === 'warn'
-                        ? 'text-yellow-400'
-                        : ''
-                  }
-                >
-                  {log.message}
-                </p>
-              ))
-            )}
-          </div>
-          {artifacts.length > 0 && (
-            <div className="mt-4">
-              <h3 className="mb-2 text-xs font-semibold uppercase text-ide-muted">Artifacts</h3>
-              <ul className="space-y-1 text-sm">
-                {artifacts.map((artifact) => (
-                  <li key={artifact.id} className="flex flex-wrap items-center gap-2">
-                    <span className="text-ide-text">{artifact.name}</span>
-                    {isVcdArtifact(artifact) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          openWaveform(artifact).catch((err: unknown) => {
-                            setError(err instanceof Error ? err.message : 'Failed to open waveform');
-                          });
-                        }}
-                        className="text-sky-400 underline"
-                      >
-                        View
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        downloadArtifact(artifact.downloadUrl, artifact.name).catch((err: unknown) => {
-                          setError(err instanceof Error ? err.message : 'Download failed');
-                        });
-                      }}
-                      className="text-emerald-400 underline"
+          ) : (
+            <>
+              <div className="mb-4 h-1 overflow-hidden rounded bg-ide-sidebar">
+                <div
+                  className="h-full bg-emerald-500 transition-all"
+                  style={{ width: `${jobProgress}%` }}
+                />
+              </div>
+              <div className="flex-1 overflow-y-auto rounded border border-ide-border bg-ide-bg p-3 font-mono text-xs text-ide-muted">
+                {rightPanel === 'simulate' && jobLogs.length === 0 && (
+                  <p className="mb-2 text-yellow-400/90">
+                    Testbench must call $dumpfile(&quot;dump.vcd&quot;) for waveform capture.
+                  </p>
+                )}
+                {jobLogs.length === 0 ? (
+                  <p>{rightPanel === 'compile' ? 'Compile' : 'Simulation'} logs appear here.</p>
+                ) : (
+                  jobLogs.map((log) => (
+                    <p
+                      key={log.sequence}
+                      className={
+                        log.level === 'error'
+                          ? 'text-red-400'
+                          : log.level === 'warn'
+                            ? 'text-yellow-400'
+                            : ''
+                      }
                     >
-                      Download
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                      {log.message}
+                    </p>
+                  ))
+                )}
+              </div>
+              {artifacts.length > 0 && (
+                <div className="mt-4">
+                  <h3 className="mb-2 text-xs font-semibold uppercase text-ide-muted">Artifacts</h3>
+                  <ul className="space-y-1 text-sm">
+                    {artifacts.map((artifact) => (
+                      <li key={artifact.id} className="flex flex-wrap items-center gap-2">
+                        <span className="text-ide-text">{artifact.name}</span>
+                        {isVcdArtifact(artifact) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              openWaveform(artifact).catch((err: unknown) => {
+                                setError(
+                                  err instanceof Error ? err.message : 'Failed to open waveform',
+                                );
+                              });
+                            }}
+                            className="text-sky-400 underline"
+                          >
+                            View
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            downloadArtifact(artifact.downloadUrl, artifact.name).catch(
+                              (err: unknown) => {
+                                setError(err instanceof Error ? err.message : 'Download failed');
+                              },
+                            );
+                          }}
+                          className="text-emerald-400 underline"
+                        >
+                          Download
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
         </aside>
       </div>

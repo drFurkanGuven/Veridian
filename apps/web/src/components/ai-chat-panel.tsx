@@ -15,6 +15,9 @@ interface AiChatPanelProps {
   projectId: string;
   activeFileId?: string | null;
   activeFilePath?: string | null;
+  editorContent?: string;
+  onApplyToEditor?: (content: string) => void;
+  onApplyAndSave?: (content: string) => void;
   className?: string;
 }
 
@@ -25,10 +28,24 @@ interface ChatEntry {
   streaming?: boolean;
 }
 
+function extractPrimaryCodeBlock(content: string): string | null {
+  const match = content.match(/```(?:\w+)?\n([\s\S]*?)```/);
+  return match?.[1]?.trim() ?? null;
+}
+
+const QUICK_PROMPTS = [
+  'Explain this file',
+  'Fix errors in this code',
+  'Add $dumpfile to this testbench',
+];
+
 export function AiChatPanel({
   projectId,
   activeFileId,
   activeFilePath,
+  editorContent,
+  onApplyToEditor,
+  onApplyAndSave,
   className = '',
 }: AiChatPanelProps) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -74,8 +91,8 @@ export function AiChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending]);
 
-  async function handleSend() {
-    const text = input.trim();
+  async function handleSend(prompt?: string) {
+    const text = (prompt ?? input).trim();
     if (!text || !conversation || sending) return;
 
     setInput('');
@@ -141,80 +158,116 @@ export function AiChatPanel({
 
     wsRef.current = ws;
     ws.onopen = () => {
-      sendAiMessage(ws, text, activeFileId ?? undefined);
+      sendAiMessage(ws, text, {
+        activeFileId: activeFileId ?? undefined,
+        editorContent: editorContent ?? '',
+      });
     };
   }
 
   if (loading) {
     return (
-      <div className={`flex h-[70vh] items-center justify-center text-sm text-ide-muted ${className}`}>
-        Loading AI assistant…
+      <div className={`flex flex-1 items-center justify-center text-sm text-ide-muted ${className}`}>
+        Loading AI…
       </div>
     );
   }
 
   return (
-    <div className={`flex h-[70vh] min-h-0 flex-col rounded border border-ide-border bg-ide-bg ${className}`}>
-      <div className="border-b border-ide-border px-4 py-2">
-        <h2 className="text-sm font-semibold text-white">Veridian AI</h2>
-        <p className="text-xs text-ide-muted">
-          {conversation?.title ?? 'Chat'}
-          {activeFilePath ? ` · context: ${activeFilePath}` : ''}
+    <div className={`flex min-h-0 flex-1 flex-col ${className}`}>
+      {activeFilePath ? (
+        <p className="mb-2 text-xs text-ide-muted">
+          Editing: <span className="font-mono text-ide-text">{activeFilePath}</span>
         </p>
+      ) : (
+        <p className="mb-2 text-xs text-yellow-400/90">Open a file to let AI read and edit code.</p>
+      )}
+
+      {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
+
+      <div className="mb-2 flex flex-wrap gap-1">
+        {QUICK_PROMPTS.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            disabled={sending || !activeFileId}
+            onClick={() => {
+              handleSend(prompt).catch(() => undefined);
+            }}
+            className="rounded border border-ide-border px-2 py-0.5 text-[10px] text-ide-muted hover:bg-ide-sidebar disabled:opacity-50"
+          >
+            {prompt}
+          </button>
+        ))}
       </div>
 
-      {error && <p className="px-4 py-2 text-xs text-red-400">{error}</p>}
-
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div className="flex-1 space-y-2 overflow-y-auto rounded border border-ide-border bg-ide-bg p-2">
         {messages.length === 0 && (
-          <p className="text-sm text-ide-muted">
-            Ask about your HDL design, testbench, synthesis, or simulation errors.
-          </p>
+          <p className="text-xs text-ide-muted">Ask about HDL, testbenches, or simulation errors.</p>
         )}
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`rounded px-3 py-2 text-sm ${
-              message.role === 'user'
-                ? 'ml-8 bg-ide-sidebar text-white'
-                : 'mr-8 border border-ide-border text-ide-text'
-            }`}
-          >
-            <p className="mb-1 text-[10px] uppercase tracking-wide text-ide-muted">{message.role}</p>
-            <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
-            {message.streaming && <span className="text-xs text-ide-muted">…</span>}
-          </div>
-        ))}
+        {messages.map((message) => {
+          const codeBlock = message.role === 'assistant' ? extractPrimaryCodeBlock(message.content) : null;
+          return (
+            <div
+              key={message.id}
+              className={`rounded px-2 py-1.5 text-xs ${
+                message.role === 'user' ? 'bg-ide-sidebar text-white' : 'border border-ide-border text-ide-text'
+              }`}
+            >
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-ide-muted">{message.role}</p>
+              <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
+              {message.streaming && <span className="text-ide-muted">…</span>}
+              {codeBlock && !message.streaming && onApplyToEditor && (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onApplyToEditor(codeBlock)}
+                    className="text-sky-400 underline"
+                  >
+                    Apply to editor
+                  </button>
+                  {onApplyAndSave && (
+                    <button
+                      type="button"
+                      onClick={() => onApplyAndSave(codeBlock)}
+                      className="text-emerald-400 underline"
+                    >
+                      Apply &amp; save
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-ide-border p-3">
-        <div className="flex gap-2">
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                handleSend().catch(() => undefined);
-              }
-            }}
-            placeholder="Ask Veridian AI…"
-            rows={2}
-            disabled={sending}
-            className="flex-1 resize-none rounded border border-ide-border bg-ide-sidebar px-3 py-2 text-sm text-white"
-          />
-          <button
-            type="button"
-            onClick={() => {
+      <div className="mt-2 flex gap-2">
+        <textarea
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
               handleSend().catch(() => undefined);
-            }}
-            disabled={sending || !input.trim()}
-            className="self-end rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {sending ? '…' : 'Send'}
-          </button>
-        </div>
+            }
+          }}
+          placeholder="Ask AI about the open file…"
+          rows={2}
+          disabled={sending}
+          className="flex-1 resize-none rounded border border-ide-border bg-ide-sidebar px-2 py-1.5 text-xs text-white"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            handleSend().catch(() => undefined);
+          }}
+          disabled={sending || !input.trim()}
+          className="self-end rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+        >
+          {sending ? '…' : 'Send'}
+        </button>
       </div>
     </div>
   );

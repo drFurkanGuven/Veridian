@@ -54,7 +54,9 @@ async def ai_chat_ws(
                 continue
 
             active_file_id = payload.get("activeFileId")
+            editor_content = payload.get("editorContent")
             file_uuid = UUID(str(active_file_id)) if active_file_id else None
+            editor_text = str(editor_content) if editor_content is not None else None
 
             async with async_session_factory() as session:
                 ai = AiService(session, settings)
@@ -64,6 +66,7 @@ async def ai_chat_ws(
                         conversation_id,
                         content,
                         active_file_id=file_uuid,
+                        editor_content=editor_text,
                     ):
                         await websocket.send_json({"type": "chunk", "content": chunk})
 

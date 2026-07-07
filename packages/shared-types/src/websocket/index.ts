@@ -103,6 +103,7 @@ export interface WsAiUserMessage {
   type: 'message';
   content: string;
   activeFileId?: string;
+  editorContent?: string;
 }
 
 export type WsAiServerMessage = WsAiChunkMessage | WsAiDoneMessage | WsAiErrorMessage;

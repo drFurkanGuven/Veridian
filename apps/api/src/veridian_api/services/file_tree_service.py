@@ -157,6 +157,44 @@ class FileTreeService:
         await self._db.flush()
         return file
 
+    async def rename_file(
+        self,
+        user_id: UUID,
+        project_id: UUID,
+        file_id: UUID,
+        new_name: str,
+    ) -> File:
+        file = await self.get_file(user_id, project_id, file_id)
+        try:
+            safe_name = sanitize_name(new_name)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+        parent_path: Optional[str] = None
+        if file.folder_id is not None:
+            folder = await self._get_folder(project_id, file.folder_id)
+            parent_path = folder.path
+
+        new_path = join_path(parent_path, safe_name)
+        if new_path == file.path:
+            return file
+
+        existing = await self._db.scalar(
+            select(File.id).where(
+                File.project_id == project_id,
+                File.path == new_path,
+                File.id != file_id,
+            )
+        )
+        if existing:
+            raise ConflictError("A file with that name already exists")
+
+        file.name = safe_name
+        file.path = new_path
+        file.language = detect_language(safe_name)
+        await self._db.flush()
+        return file
+
     async def delete_file(self, user_id: UUID, project_id: UUID, file_id: UUID) -> None:
         file = await self.get_file(user_id, project_id, file_id)
         await self._storage.delete_object(file.storage_key)

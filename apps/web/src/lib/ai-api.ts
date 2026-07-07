@@ -116,12 +116,13 @@ export function connectAiWebSocket(
 export function sendAiMessage(
   ws: WebSocket,
   content: string,
-  activeFileId?: string,
+  options?: { activeFileId?: string; editorContent?: string },
 ): void {
   const payload: WsAiClientMessage = {
     type: 'message',
     content,
-    ...(activeFileId ? { activeFileId } : {}),
+    ...(options?.activeFileId ? { activeFileId: options.activeFileId } : {}),
+    ...(options?.editorContent !== undefined ? { editorContent: options.editorContent } : {}),
   };
   ws.send(JSON.stringify(payload));
 }

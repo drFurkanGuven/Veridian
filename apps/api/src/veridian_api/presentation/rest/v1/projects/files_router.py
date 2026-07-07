@@ -13,6 +13,7 @@ from veridian_api.presentation.rest.v1.projects.files_schemas import (
     FileNodeResponse,
     FolderNodeResponse,
     ProjectTreeResponse,
+    RenameFileRequest,
     UpdateFileContentRequest,
     build_project_tree,
     file_to_node,
@@ -121,6 +122,18 @@ async def update_file_content(
         checksum=file.checksum,
         updated_at=file.updated_at,
     )
+
+
+@router.patch("/files/{file_id}", response_model=FileNodeResponse)
+async def rename_file(
+    project_id: UUID,
+    file_id: UUID,
+    body: RenameFileRequest,
+    current_user: User = Depends(get_current_user),
+    tree: FileTreeService = Depends(get_file_tree_service),
+) -> FileNodeResponse:
+    file = await tree.rename_file(current_user.id, project_id, file_id, body.name)
+    return file_to_node(file)
 
 
 @router.delete("/files/{file_id}", status_code=204)

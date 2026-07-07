@@ -86,6 +86,20 @@ export async function updateFileContent(
   return response.json();
 }
 
+export async function renameFile(
+  projectId: string,
+  fileId: string,
+  name: string,
+): Promise<FileNode> {
+  const response = await fetch(`${projectBase(projectId)}/files/${fileId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+}
+
 export async function deleteFile(projectId: string, fileId: string): Promise<void> {
   const response = await fetch(`${projectBase(projectId)}/files/${fileId}`, {
     method: 'DELETE',

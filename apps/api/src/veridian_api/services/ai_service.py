@@ -19,7 +19,9 @@ from veridian_api.services.project_service import ProjectService
 
 _SYSTEM_PROMPT = """You are Veridian AI, an expert FPGA and HDL development assistant embedded in a cloud IDE.
 Help users with Verilog, SystemVerilog, VHDL, testbenches, synthesis constraints, and simulation debugging.
-Prefer concrete, actionable answers. When suggesting code, keep it minimal and syntactically correct."""
+Prefer concrete, actionable answers. When suggesting code, keep it minimal and syntactically correct.
+When the user asks you to fix, rewrite, or generate the active file, include the full updated file in a single fenced code block.
+The user can apply that block directly to their editor."""
 
 
 class AiService:
@@ -117,6 +119,7 @@ class AiService:
         conversation_id: UUID,
         content: str,
         active_file_id: Optional[UUID] = None,
+        editor_content: Optional[str] = None,
     ) -> AsyncIterator[str]:
         text = content.strip()
         if not text:
@@ -136,7 +139,12 @@ class AiService:
         if conversation.title in {"New chat", "Chat"}:
             conversation.title = text[:80] + ("…" if len(text) > 80 else "")
 
-        messages = await self._build_llm_messages(conversation, user_id, active_file_id)
+        messages = await self._build_llm_messages(
+            conversation,
+            user_id,
+            active_file_id,
+            editor_content,
+        )
         assistant_parts: list[str] = []
         async for chunk in self._openai.stream_chat(messages):
             assistant_parts.append(chunk)
@@ -166,6 +174,7 @@ class AiService:
         conversation: AiConversation,
         user_id: UUID,
         active_file_id: Optional[UUID],
+        editor_content: Optional[str] = None,
     ) -> list[dict[str, str]]:
         system_parts = [_SYSTEM_PROMPT]
         if conversation.project_id is not None:
@@ -186,13 +195,24 @@ class AiService:
 
         if active_file_id is not None and conversation.project_id is not None:
             try:
-                file, file_content = await self._files.read_file_content(
+                file = await self._files.get_file(
                     user_id,
                     conversation.project_id,
                     active_file_id,
                 )
+                if editor_content is not None:
+                    file_body = editor_content
+                    source_note = "current editor buffer (may include unsaved changes)"
+                else:
+                    _, file_body = await self._files.read_file_content(
+                        user_id,
+                        conversation.project_id,
+                        active_file_id,
+                    )
+                    source_note = "saved file on disk"
                 system_parts.append(
-                    f"Active file: {file.path} ({file.language.value})\n```\n{file_content}\n```"
+                    f"Active file: {file.path} ({file.language.value}, {source_note})\n"
+                    f"```\n{file_body}\n```"
                 )
             except NotFoundError:
                 pass

@@ -62,6 +62,10 @@ class UpdateFileContentRequest(CamelModel):
     checksum: str = Field(min_length=64, max_length=64)
 
 
+class RenameFileRequest(CamelModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
 def file_to_node(file: File) -> FileNodeResponse:
     return FileNodeResponse.model_validate(file)
 
