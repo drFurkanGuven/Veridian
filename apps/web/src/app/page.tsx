@@ -80,7 +80,7 @@ export default async function HomePage() {
         </section>
 
         <footer className="text-center text-xs text-ide-muted">
-          Phase 11 — Waveform viewer live. Monaco editor next.
+          Phase 12 — Monaco editor live. AI module next.
         </footer>
       </div>
     </main>

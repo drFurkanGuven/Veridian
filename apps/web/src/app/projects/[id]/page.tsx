@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { CodeEditor } from '@/components/code-editor';
 import { WaveformViewer } from '@/components/waveform-viewer';
 
 import {
@@ -386,13 +387,17 @@ export default function ProjectDetailPage() {
 
           {centerTab === 'editor' ? (
             selectedFile ? (
-              <div className="h-full">
-                <p className="mb-2 font-mono text-xs text-ide-muted">{selectedFile.path}</p>
-                <textarea
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="font-mono text-xs text-ide-muted">{selectedFile.path}</p>
+                  <span className="text-xs uppercase text-ide-muted">{selectedFile.language}</span>
+                </div>
+                <CodeEditor
                   value={editorValue}
-                  onChange={(e) => setEditorValue(e.target.value)}
-                  className="h-[70vh] w-full resize-none rounded border border-ide-border bg-ide-bg p-4 font-mono text-sm text-ide-text"
-                  spellCheck={false}
+                  language={selectedFile.language}
+                  path={selectedFile.path}
+                  onChange={setEditorValue}
+                  onSave={handleSave}
                 />
               </div>
             ) : (
