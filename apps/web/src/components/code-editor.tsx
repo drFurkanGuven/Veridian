@@ -42,9 +42,9 @@ export function CodeEditor({ value, language, path, onChange, onSave, className 
   );
 
   return (
-    <div className={`overflow-hidden rounded border border-ide-border ${className}`}>
+    <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className}`}>
       <Editor
-        height="70vh"
+        height="100%"
         path={path}
         language={hdlLanguageToMonaco(language)}
         value={value}
@@ -53,7 +53,7 @@ export function CodeEditor({ value, language, path, onChange, onSave, className 
         onMount={handleMount}
         onChange={(nextValue) => onChange(nextValue ?? '')}
         loading={
-          <div className="flex h-[70vh] items-center justify-center bg-ide-bg text-sm text-ide-muted">
+          <div className="flex h-full min-h-[200px] items-center justify-center bg-ide-bg text-sm text-ide-muted">
             Loading editor…
           </div>
         }

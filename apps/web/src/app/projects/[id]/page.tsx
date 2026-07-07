@@ -161,12 +161,26 @@ export default function ProjectDetailPage() {
     setSaving(true);
     setError('');
     try {
-      const updated = await updateFileContent(projectId, selectedFile.id, {
-        content,
-        checksum: selectedFile.checksum,
-      });
-      setSelectedFile(updated);
-      setEditorValue(content);
+      try {
+        const updated = await updateFileContent(projectId, selectedFile.id, {
+          content,
+          checksum: selectedFile.checksum,
+        });
+        setSelectedFile(updated);
+        setEditorValue(content);
+      } catch (firstError) {
+        const message = firstError instanceof Error ? firstError.message : '';
+        if (!message.toLowerCase().includes('modified')) {
+          throw firstError;
+        }
+        const fresh = await getFileContent(projectId, selectedFile.id);
+        const updated = await updateFileContent(projectId, selectedFile.id, {
+          content,
+          checksum: fresh.checksum,
+        });
+        setSelectedFile(updated);
+        setEditorValue(content);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save file');
     } finally {
@@ -309,7 +323,7 @@ export default function ProjectDetailPage() {
         : 'Compile';
 
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="flex h-screen flex-col overflow-hidden">
       <header className="flex items-center justify-between border-b border-ide-border px-6 py-4">
         <div>
           <h1 className="text-xl font-bold text-white">Project IDE</h1>
@@ -387,10 +401,10 @@ export default function ProjectDetailPage() {
         </div>
       </header>
 
-      {error && <p className="px-6 py-2 text-sm text-red-400">{error}</p>}
+      {error && <p className="shrink-0 px-6 py-2 text-sm text-red-400">{error}</p>}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[240px_1fr_360px]">
-        <aside className="border-r border-ide-border p-4">
+      <div className="grid min-h-0 flex-1 grid-cols-[240px_1fr_360px] overflow-hidden">
+        <aside className="min-h-0 overflow-y-auto border-r border-ide-border p-4">
           <h2 className="mb-3 text-xs font-semibold uppercase text-ide-muted">Files</h2>
           <ul className="space-y-1 text-sm">
             {files.map((file) => (
@@ -410,7 +424,7 @@ export default function ProjectDetailPage() {
           </ul>
         </aside>
 
-        <section className="flex min-h-0 flex-col border-r border-ide-border p-4">
+        <section className="flex min-h-0 flex-col overflow-hidden border-r border-ide-border p-4">
           <div className="mb-3 flex gap-2">
             <button
               type="button"
@@ -436,8 +450,8 @@ export default function ProjectDetailPage() {
 
           {centerTab === 'editor' ? (
             selectedFile ? (
-              <div className="flex h-full min-h-0 flex-col">
-                <div className="mb-2 flex items-center gap-2">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="mb-2 flex shrink-0 items-center gap-2">
                   {editingName ? (
                     <input
                       autoFocus
@@ -479,20 +493,21 @@ export default function ProjectDetailPage() {
                   path={selectedFile.path}
                   onChange={setEditorValue}
                   onSave={() => handleSave()}
+                  className="min-h-0 flex-1 rounded border border-ide-border"
                 />
               </div>
             ) : (
               <p className="text-ide-muted">Select a file or create a new one.</p>
             )
           ) : waveformSource ? (
-            <WaveformViewer source={waveformSource} className="h-[70vh]" />
+            <WaveformViewer source={waveformSource} className="min-h-0 flex-1" />
           ) : (
             <p className="text-ide-muted">Run a simulation with VCD output to view waveforms.</p>
           )}
         </section>
 
-        <aside className="flex min-h-0 flex-col p-4">
-          <div className="mb-3 flex gap-2">
+        <aside className="flex min-h-0 flex-col overflow-hidden p-4">
+          <div className="mb-3 flex shrink-0 gap-2">
             <button
               type="button"
               onClick={() => setRightPanel('compile')}
@@ -527,7 +542,7 @@ export default function ProjectDetailPage() {
             )}
           </div>
 
-          {rightPanel === 'ai' ? (
+          <div className={rightPanel === 'ai' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
             <AiChatPanel
               projectId={projectId}
               activeFileId={selectedFile?.id}
@@ -541,15 +556,16 @@ export default function ProjectDetailPage() {
               }}
               className="min-h-0 flex-1"
             />
-          ) : (
-            <>
-              <div className="mb-4 h-1 overflow-hidden rounded bg-ide-sidebar">
-                <div
-                  className="h-full bg-emerald-500 transition-all"
-                  style={{ width: `${jobProgress}%` }}
-                />
-              </div>
-              <div className="flex-1 overflow-y-auto rounded border border-ide-border bg-ide-bg p-3 font-mono text-xs text-ide-muted">
+          </div>
+
+          <div className={rightPanel === 'ai' ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
+            <div className="mb-4 h-1 shrink-0 overflow-hidden rounded bg-ide-sidebar">
+              <div
+                className="h-full bg-emerald-500 transition-all"
+                style={{ width: `${jobProgress}%` }}
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto rounded border border-ide-border bg-ide-bg p-3 font-mono text-xs text-ide-muted">
                 {rightPanel === 'simulate' && jobLogs.length === 0 && (
                   <p className="mb-2 text-yellow-400/90">
                     Testbench must call $dumpfile(&quot;dump.vcd&quot;) for waveform capture.
@@ -573,49 +589,48 @@ export default function ProjectDetailPage() {
                     </p>
                   ))
                 )}
-              </div>
-              {artifacts.length > 0 && (
-                <div className="mt-4">
-                  <h3 className="mb-2 text-xs font-semibold uppercase text-ide-muted">Artifacts</h3>
-                  <ul className="space-y-1 text-sm">
-                    {artifacts.map((artifact) => (
-                      <li key={artifact.id} className="flex flex-wrap items-center gap-2">
-                        <span className="text-ide-text">{artifact.name}</span>
-                        {isVcdArtifact(artifact) && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openWaveform(artifact).catch((err: unknown) => {
-                                setError(
-                                  err instanceof Error ? err.message : 'Failed to open waveform',
-                                );
-                              });
-                            }}
-                            className="text-sky-400 underline"
-                          >
-                            View
-                          </button>
-                        )}
+            </div>
+            {artifacts.length > 0 && (
+              <div className="mt-4 shrink-0">
+                <h3 className="mb-2 text-xs font-semibold uppercase text-ide-muted">Artifacts</h3>
+                <ul className="space-y-1 text-sm">
+                  {artifacts.map((artifact) => (
+                    <li key={artifact.id} className="flex flex-wrap items-center gap-2">
+                      <span className="text-ide-text">{artifact.name}</span>
+                      {isVcdArtifact(artifact) && (
                         <button
                           type="button"
                           onClick={() => {
-                            downloadArtifact(artifact.downloadUrl, artifact.name).catch(
-                              (err: unknown) => {
-                                setError(err instanceof Error ? err.message : 'Download failed');
-                              },
-                            );
+                            openWaveform(artifact).catch((err: unknown) => {
+                              setError(
+                                err instanceof Error ? err.message : 'Failed to open waveform',
+                              );
+                            });
                           }}
-                          className="text-emerald-400 underline"
+                          className="text-sky-400 underline"
                         >
-                          Download
+                          View
                         </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          downloadArtifact(artifact.downloadUrl, artifact.name).catch(
+                            (err: unknown) => {
+                              setError(err instanceof Error ? err.message : 'Download failed');
+                            },
+                          );
+                        }}
+                        className="text-emerald-400 underline"
+                      >
+                        Download
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </aside>
       </div>
     </main>

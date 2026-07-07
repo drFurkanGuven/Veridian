@@ -80,7 +80,7 @@ export default async function HomePage() {
         </section>
 
         <footer className="text-center text-xs text-ide-muted">
-          Phase 13 — AI assistant live.
+          Veridian — cloud FPGA IDE. Editor, simulation, waveforms &amp; AI assistant.
         </footer>
       </div>
     </main>

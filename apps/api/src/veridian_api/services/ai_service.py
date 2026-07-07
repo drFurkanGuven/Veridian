@@ -21,7 +21,8 @@ _SYSTEM_PROMPT = """You are Veridian AI, an expert FPGA and HDL development assi
 Help users with Verilog, SystemVerilog, VHDL, testbenches, synthesis constraints, and simulation debugging.
 Prefer concrete, actionable answers. When suggesting code, keep it minimal and syntactically correct.
 When the user asks you to fix, rewrite, or generate the active file, include the full updated file in a single fenced code block.
-The user can apply that block directly to their editor."""
+The user can apply that block directly to their editor.
+You are in a multi-turn conversation: remember earlier messages and follow up on prior answers."""
 
 
 class AiService:
@@ -177,6 +178,8 @@ class AiService:
         editor_content: Optional[str] = None,
     ) -> list[dict[str, str]]:
         system_parts = [_SYSTEM_PROMPT]
+        file_context_block: Optional[str] = None
+
         if conversation.project_id is not None:
             project = await self._db.scalar(
                 select(Project).where(Project.id == conversation.project_id)
@@ -210,8 +213,8 @@ class AiService:
                         active_file_id,
                     )
                     source_note = "saved file on disk"
-                system_parts.append(
-                    f"Active file: {file.path} ({file.language.value}, {source_note})\n"
+                file_context_block = (
+                    f"[Active file: {file.path} ({file.language.value}, {source_note})]\n"
                     f"```\n{file_body}\n```"
                 )
             except NotFoundError:
@@ -225,15 +228,19 @@ class AiService:
             )
         ).all()
 
+        recent_history = [message for message in history if message.role != AiMessageRole.SYSTEM][-40:]
+
         llm_messages: list[dict[str, str]] = [
             {"role": "system", "content": self._trim_context("\n\n".join(system_parts))}
         ]
-        for message in history[-40:]:
-            if message.role == AiMessageRole.SYSTEM:
-                continue
-            llm_messages.append(
-                {"role": message.role.value, "content": message.content},
+        for index, message in enumerate(recent_history):
+            content = message.content
+            is_last_user = (
+                index == len(recent_history) - 1 and message.role == AiMessageRole.USER
             )
+            if is_last_user and file_context_block:
+                content = f"{content}\n\n{file_context_block}"
+            llm_messages.append({"role": message.role.value, "content": content})
 
         return llm_messages
 

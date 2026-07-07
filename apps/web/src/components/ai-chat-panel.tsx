@@ -28,6 +28,10 @@ interface ChatEntry {
   streaming?: boolean;
 }
 
+function conversationStorageKey(projectId: string): string {
+  return `veridian:ai-conversation:${projectId}`;
+}
+
 function extractPrimaryCodeBlock(content: string): string | null {
   const match = content.match(/```(?:\w+)?\n([\s\S]*?)```/);
   return match?.[1]?.trim() ?? null;
@@ -49,7 +53,9 @@ export function AiChatPanel({
   className = '',
 }: AiChatPanelProps) {
   const wsRef = useRef<WebSocket | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const editorContentRef = useRef(editorContent ?? '');
+  const activeFileIdRef = useRef(activeFileId);
   const [conversation, setConversation] = useState<AiConversation | null>(null);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
@@ -57,13 +63,27 @@ export function AiChatPanel({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
+  editorContentRef.current = editorContent ?? '';
+  activeFileIdRef.current = activeFileId;
+
+  const scrollToBottom = useCallback(() => {
+    const container = messagesRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+  }, []);
+
   const loadConversation = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
+      const storageKey = conversationStorageKey(projectId);
+      const storedId = localStorage.getItem(storageKey);
       const conversations = await listProjectConversations(projectId);
       const current =
-        conversations[0] ?? (await createProjectConversation(projectId, { title: 'New chat' }));
+        conversations.find((item) => item.id === storedId) ??
+        conversations[0] ??
+        (await createProjectConversation(projectId, { title: 'Project chat' }));
+      localStorage.setItem(storageKey, current.id);
       setConversation(current);
       const history = await getConversationMessages(current.id);
       setMessages(
@@ -88,8 +108,20 @@ export function AiChatPanel({
   }, [loadConversation]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, sending]);
+    scrollToBottom();
+  }, [messages, sending, scrollToBottom]);
+
+  async function startNewChat() {
+    setError('');
+    try {
+      const created = await createProjectConversation(projectId, { title: 'New chat' });
+      localStorage.setItem(conversationStorageKey(projectId), created.id);
+      setConversation(created);
+      setMessages([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start new chat');
+    }
+  }
 
   async function handleSend(prompt?: string) {
     const text = (prompt ?? input).trim();
@@ -159,8 +191,8 @@ export function AiChatPanel({
     wsRef.current = ws;
     ws.onopen = () => {
       sendAiMessage(ws, text, {
-        activeFileId: activeFileId ?? undefined,
-        editorContent: editorContent ?? '',
+        activeFileId: activeFileIdRef.current ?? undefined,
+        editorContent: editorContentRef.current,
       });
     };
   }
@@ -174,18 +206,30 @@ export function AiChatPanel({
   }
 
   return (
-    <div className={`flex min-h-0 flex-1 flex-col ${className}`}>
-      {activeFilePath ? (
-        <p className="mb-2 text-xs text-ide-muted">
-          Editing: <span className="font-mono text-ide-text">{activeFilePath}</span>
-        </p>
-      ) : (
-        <p className="mb-2 text-xs text-yellow-400/90">Open a file to let AI read and edit code.</p>
-      )}
+    <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className}`}>
+      <div className="mb-2 flex shrink-0 items-center gap-2">
+        {activeFilePath ? (
+          <p className="min-w-0 flex-1 truncate text-xs text-ide-muted">
+            <span className="font-mono text-ide-text">{activeFilePath}</span>
+            <span className="ml-1 text-ide-muted">(live editor)</span>
+          </p>
+        ) : (
+          <p className="flex-1 text-xs text-yellow-400/90">Open a file for AI code edits.</p>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            startNewChat().catch(() => undefined);
+          }}
+          className="shrink-0 rounded border border-ide-border px-2 py-0.5 text-[10px] text-ide-muted hover:bg-ide-sidebar"
+        >
+          New chat
+        </button>
+      </div>
 
-      {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
+      {error && <p className="mb-2 shrink-0 text-xs text-red-400">{error}</p>}
 
-      <div className="mb-2 flex flex-wrap gap-1">
+      <div className="mb-2 flex shrink-0 flex-wrap gap-1">
         {QUICK_PROMPTS.map((prompt) => (
           <button
             key={prompt}
@@ -201,17 +245,23 @@ export function AiChatPanel({
         ))}
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto rounded border border-ide-border bg-ide-bg p-2">
+      <div
+        ref={messagesRef}
+        className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded border border-ide-border bg-ide-bg p-2"
+      >
         {messages.length === 0 && (
           <p className="text-xs text-ide-muted">Ask about HDL, testbenches, or simulation errors.</p>
         )}
         {messages.map((message) => {
-          const codeBlock = message.role === 'assistant' ? extractPrimaryCodeBlock(message.content) : null;
+          const codeBlock =
+            message.role === 'assistant' ? extractPrimaryCodeBlock(message.content) : null;
           return (
             <div
               key={message.id}
               className={`rounded px-2 py-1.5 text-xs ${
-                message.role === 'user' ? 'bg-ide-sidebar text-white' : 'border border-ide-border text-ide-text'
+                message.role === 'user'
+                  ? 'bg-ide-sidebar text-white'
+                  : 'border border-ide-border text-ide-text'
               }`}
             >
               <p className="mb-1 text-[10px] uppercase tracking-wide text-ide-muted">{message.role}</p>
@@ -240,10 +290,9 @@ export function AiChatPanel({
             </div>
           );
         })}
-        <div ref={bottomRef} />
       </div>
 
-      <div className="mt-2 flex gap-2">
+      <div className="mt-2 flex shrink-0 gap-2">
         <textarea
           value={input}
           onChange={(event) => setInput(event.target.value)}
