@@ -18,10 +18,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AiChatPanel } from '@/components/ai-chat-panel';
 import { CodeEditor } from '@/components/code-editor';
+import { FileTreeSidebar } from '@/components/file-tree-sidebar';
 import { WaveformViewer } from '@/components/waveform-viewer';
 
 import {
   createFile,
+  deleteFile,
   getFileContent,
   getProjectTree,
   renameFile,
@@ -138,7 +140,6 @@ export default function ProjectDetailPage() {
   const aiBuildContext = useMemo(() => {
     const hasErrorLogs = jobLogs.some((log) => log.level === 'error');
     const includeLogs = jobStatus === 'failed' || hasErrorLogs;
-    if (!includeLogs && !jobStatus) return undefined;
     return {
       ...(jobStatus ? { jobStatus } : {}),
       ...(includeLogs && jobLogs.length > 0
@@ -149,8 +150,16 @@ export default function ProjectDetailPage() {
             })),
           }
         : {}),
+      ...(files.length > 0
+        ? {
+            projectFiles: files.map((file) => ({
+              path: file.path,
+              language: file.language,
+            })),
+          }
+        : {}),
     };
-  }, [jobLogs, jobStatus]);
+  }, [files, jobLogs, jobStatus]);
 
   useEffect(() => {
     if (!testbenchFileId && files.length > 0) {
@@ -217,6 +226,43 @@ export default function ProjectDetailPage() {
       setCenterTab('editor');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to write file');
+      throw err;
+    }
+  }
+
+  async function handleSidebarRename(fileId: string, newName: string) {
+    setError('');
+    try {
+      const node = await renameFile(projectId, fileId, newName);
+      await loadTree();
+      if (selectedFile?.id === fileId) {
+        setSelectedFile({
+          ...selectedFile,
+          path: node.path,
+          language: node.language,
+        });
+        setNameDraft(fileBaseName(node.path));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rename file');
+      throw err;
+    }
+  }
+
+  async function handleDeleteFile(fileId: string) {
+    setError('');
+    try {
+      await deleteFile(projectId, fileId);
+      await loadTree();
+      if (selectedFile?.id === fileId) {
+        setSelectedFile(null);
+        setEditorValue('');
+        setEditorSelection(null);
+        setEditingName(false);
+        setCenterTab('editor');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete file');
       throw err;
     }
   }
@@ -470,25 +516,18 @@ export default function ProjectDetailPage() {
       {error && <p className="shrink-0 px-6 py-2 text-sm text-red-400">{error}</p>}
 
       <div className="grid min-h-0 flex-1 grid-cols-[240px_1fr_360px] overflow-hidden">
-        <aside className="min-h-0 overflow-y-auto border-r border-ide-border p-4">
-          <h2 className="mb-3 text-xs font-semibold uppercase text-ide-muted">Files</h2>
-          <ul className="space-y-1 text-sm">
-            {files.map((file) => (
-              <li key={file.id}>
-                <button
-                  type="button"
-                  onClick={() => openFile(file.id)}
-                  className={`w-full rounded px-2 py-1 text-left hover:bg-ide-sidebar ${
-                    selectedFile?.id === file.id ? 'bg-ide-sidebar text-white' : 'text-ide-muted'
-                  }`}
-                >
-                  {file.path}
-                </button>
-              </li>
-            ))}
-            {files.length === 0 && <li className="text-ide-muted">No files yet</li>}
-          </ul>
-        </aside>
+        <FileTreeSidebar
+          files={files}
+          selectedFileId={selectedFile?.id}
+          onOpenFile={(fileId) => {
+            openFile(fileId).catch(() => undefined);
+          }}
+          onRenameFile={handleSidebarRename}
+          onDeleteFile={handleDeleteFile}
+          onCreateFile={() => {
+            handleCreateFile().catch(() => undefined);
+          }}
+        />
 
         <section className="flex min-h-0 flex-col overflow-hidden border-r border-ide-border p-4">
           <div className="mb-3 flex gap-2">

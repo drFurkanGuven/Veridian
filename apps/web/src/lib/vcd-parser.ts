@@ -17,7 +17,6 @@ export interface ParsedVcd {
   endTime: number;
 }
 
-const END_DEFINITIONS = '$enddefinitions';
 
 function parseVarLine(line: string, scopeStack: string[]): VcdSignal | null {
   const match = line.match(/^\$var\s+\S+\s+(\d+)\s+(\S+)\s+(.+?)\s+\$end$/);
@@ -100,7 +99,7 @@ export function parseVcd(source: string): ParsedVcd {
         }
         continue;
       }
-      if (line.startsWith(END_DEFINITIONS)) {
+      if (line.includes('$enddefinitions')) {
         inDefinitions = false;
       }
       continue;

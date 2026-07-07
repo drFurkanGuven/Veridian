@@ -22,7 +22,7 @@ export default function RegisterPage() {
     try {
       const result = await registerUser({ email, password, displayName });
       saveAuthTokens(result.tokens);
-      router.push('/');
+      router.push('/projects');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {

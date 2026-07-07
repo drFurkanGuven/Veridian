@@ -377,6 +377,11 @@ export function AiChatPanel({
         </button>
       </div>
 
+      <div className="mb-2 shrink-0 rounded border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-ide-muted">
+        Veridian AI runs inside your project. It can read open files, create/update files, fix selections,
+        and use simulation logs. Ask it to write files directly — it will apply changes automatically.
+      </div>
+
       {buildContext?.simulationLogs && buildContext.simulationLogs.length > 0 && (
         <p className="mb-2 shrink-0 text-[10px] text-amber-400/90">
           Simulation logs will be included with your next message.

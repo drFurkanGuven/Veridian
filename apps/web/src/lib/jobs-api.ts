@@ -10,27 +10,23 @@ import type {
   SimulationJob,
 } from '@veridian/shared-types';
 
+import { apiFetch, authHeaders, getAccessToken, parseError } from '@/lib/api-http';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-function getAccessToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('veridian_access_token');
-}
-
-function authHeaders(): HeadersInit {
-  const token = getAccessToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
-async function parseError(response: Response): Promise<string> {
+function normalizeArtifactUrl(downloadUrl: string): string {
+  const apiBase = API_URL.replace(/\/$/, '');
   try {
-    const data = await response.json();
-    return data.detail ?? response.statusText;
+    const parsed = new URL(downloadUrl, apiBase);
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      return `${apiBase}${parsed.pathname}${parsed.search}`;
+    }
+    return parsed.toString();
   } catch {
-    return response.statusText;
+    if (downloadUrl.startsWith('/')) {
+      return `${apiBase}${downloadUrl}`;
+    }
+    return downloadUrl;
   }
 }
 
@@ -90,13 +86,20 @@ export async function getJobArtifacts(jobId: string): Promise<ArtifactMeta[]> {
 }
 
 export async function fetchArtifactContent(downloadUrl: string): Promise<string> {
-  const response = await fetch(downloadUrl, { headers: authHeaders() });
+  const response = await apiFetch(normalizeArtifactUrl(downloadUrl), { headers: authHeaders() });
   if (!response.ok) throw new Error(await parseError(response));
-  return response.text();
+  const content = await response.text();
+  if (content.trim().startsWith('{') && content.includes('"detail"')) {
+    throw new Error('Artifact download failed');
+  }
+  if (!content.includes('$enddefinitions') && !content.match(/^#/m)) {
+    throw new Error('Downloaded file does not look like a VCD waveform');
+  }
+  return content;
 }
 
 export async function downloadArtifact(downloadUrl: string, filename: string): Promise<void> {
-  const response = await fetch(downloadUrl, { headers: authHeaders() });
+  const response = await apiFetch(normalizeArtifactUrl(downloadUrl), { headers: authHeaders() });
   if (!response.ok) throw new Error(await parseError(response));
   const blob = await response.blob();
   const href = URL.createObjectURL(blob);

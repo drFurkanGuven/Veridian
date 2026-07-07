@@ -340,6 +340,7 @@ class AiService:
             job_status = build_context.get("jobStatus")
             logs = build_context.get("simulationLogs") or build_context.get("simulation_logs")
             tool_feedback = build_context.get("aiToolFeedback") or build_context.get("ai_tool_feedback")
+            project_files = build_context.get("projectFiles") or build_context.get("project_files")
             if job_status:
                 context_blocks.append(f"[Last job status: {job_status}]")
             if isinstance(logs, list) and logs:
@@ -374,6 +375,21 @@ class AiService:
                         context_blocks.append(
                             "[AI tool result: failed writes]\n" + "\n".join(failed_lines)
                         )
+            if isinstance(project_files, list) and project_files:
+                file_lines: list[str] = []
+                for item in project_files[:80]:
+                    if not isinstance(item, dict):
+                        continue
+                    path = item.get("path")
+                    language = item.get("language")
+                    if path:
+                        file_lines.append(
+                            f"- {path}" + (f" ({language})" if language else "")
+                        )
+                if file_lines:
+                    context_blocks.append(
+                        "[Current project files from IDE]\n" + "\n".join(file_lines)
+                    )
 
         recent_history = [message for message in history if message.role != AiMessageRole.SYSTEM][-40:]
 

@@ -21,7 +21,7 @@ export default function LoginPage() {
     try {
       const result = await loginUser({ email, password });
       saveAuthTokens(result.tokens);
-      router.push('/');
+      router.push('/projects');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

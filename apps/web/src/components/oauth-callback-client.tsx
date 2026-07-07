@@ -28,7 +28,7 @@ export function OAuthCallbackClient({ provider }: { provider: 'google' | 'github
       .then((result) => {
         sessionStorage.removeItem(oauthStateKey(provider));
         saveAuthTokens(result.tokens);
-        router.replace('/');
+        router.replace('/projects');
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'OAuth sign-in failed');

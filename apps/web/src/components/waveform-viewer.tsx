@@ -195,45 +195,54 @@ export function WaveformViewer({ source, className = '' }: WaveformViewerProps) 
     const container = containerRef.current;
     if (!canvas || !container || !parsed) return;
 
-    const width = container.clientWidth;
-    const height = TIME_AXIS_HEIGHT + visibleSignals.length * ROW_HEIGHT;
-    const dpr = window.devicePixelRatio || 1;
+    const render = () => {
+      const width = container.clientWidth;
+      if (width <= 0) return;
 
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+      const height = TIME_AXIS_HEIGHT + visibleSignals.length * ROW_HEIGHT;
+      const dpr = window.devicePixelRatio || 1;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#1e1e1e';
-    ctx.fillRect(0, 0, width, height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    const plotWidth = Math.max(width - LABEL_WIDTH, 1);
-    const timeScale = parsed.endTime > 0 ? plotWidth / parsed.endTime : 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#1e1e1e';
+      ctx.fillRect(0, 0, width, height);
 
-    drawTimeAxis(ctx, width, parsed.endTime, timeScale, offsetX, parsed.timescale);
+      const plotWidth = Math.max(width - LABEL_WIDTH, 1);
+      const timeScale = parsed.endTime > 0 ? plotWidth / parsed.endTime : 1;
 
-    visibleSignals.forEach((signal, index) => {
-      if (index % 2 === 0) {
-        ctx.fillStyle = '#252526';
-        ctx.fillRect(0, TIME_AXIS_HEIGHT + index * ROW_HEIGHT, width, ROW_HEIGHT);
+      drawTimeAxis(ctx, width, parsed.endTime, timeScale, offsetX, parsed.timescale);
+
+      visibleSignals.forEach((signal, index) => {
+        if (index % 2 === 0) {
+          ctx.fillStyle = '#252526';
+          ctx.fillRect(0, TIME_AXIS_HEIGHT + index * ROW_HEIGHT, width, ROW_HEIGHT);
+        }
+        drawSignalRow(ctx, signal, parsed, index, width, timeScale, offsetX);
+      });
+
+      if (cursorTime !== null) {
+        const x = LABEL_WIDTH + cursorTime * timeScale - offsetX;
+        ctx.strokeStyle = '#007acc';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
       }
-      drawSignalRow(ctx, signal, parsed, index, width, timeScale, offsetX);
-    });
+    };
 
-    if (cursorTime !== null) {
-      const x = LABEL_WIDTH + cursorTime * timeScale - offsetX;
-      ctx.strokeStyle = '#007acc';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
+    render();
+    const observer = new ResizeObserver(() => render());
+    observer.observe(container);
+    return () => observer.disconnect();
   }, [parsed, visibleSignals, offsetX, cursorTime]);
 
   if (!parsed) {
@@ -248,6 +257,14 @@ export function WaveformViewer({ source, className = '' }: WaveformViewerProps) 
     return (
       <div className={`rounded border border-ide-border bg-ide-bg p-4 text-sm text-ide-muted ${className}`}>
         No signals found in VCD file.
+      </div>
+    );
+  }
+
+  if (parsed.endTime === 0) {
+    return (
+      <div className={`rounded border border-ide-border bg-ide-bg p-4 text-sm text-yellow-400 ${className}`}>
+        VCD loaded but contains no time steps. Ensure your testbench runs long enough and calls $dumpvars.
       </div>
     );
   }
