@@ -72,7 +72,10 @@ async def ai_chat_ws(
                         {
                             "type": "done",
                             "messageId": str(message_id) if message_id else "",
-                            "metadata": {"model": settings.ai_model},
+                            "metadata": {
+                                "model": settings.ai_model,
+                                "provider": settings.resolved_ai_provider,
+                            },
                         }
                     )
                 except AppError as exc:

@@ -69,12 +69,37 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
 
     openai_api_key: str = ""
+    deepinfra_api_key: str = ""
+    ai_api_key: str = ""
+    ai_provider: str = "openai"
+    ai_api_base_url: str = ""
     ai_model: str = "gpt-4o"
     ai_max_context_tokens: int = 32000
 
     @property
+    def resolved_ai_api_key(self) -> str:
+        if self.ai_api_key.strip():
+            return self.ai_api_key.strip()
+        provider = self.ai_provider.lower().strip()
+        if provider == "deepinfra":
+            return self.deepinfra_api_key.strip()
+        return self.openai_api_key.strip()
+
+    @property
+    def resolved_ai_base_url(self) -> str:
+        if self.ai_api_base_url.strip():
+            return self.ai_api_base_url.strip().rstrip("/")
+        if self.ai_provider.lower().strip() == "deepinfra":
+            return "https://api.deepinfra.com/v1/openai"
+        return "https://api.openai.com/v1"
+
+    @property
     def ai_enabled(self) -> bool:
-        return bool(self.openai_api_key.strip())
+        return bool(self.resolved_ai_api_key)
+
+    @property
+    def resolved_ai_provider(self) -> str:
+        return self.ai_provider.lower().strip() or "openai"
 
     auth_max_login_attempts: int = 5
     auth_lockout_minutes: int = 15

@@ -9,7 +9,9 @@ import httpx
 from veridian_api.core.config import Settings
 
 
-class OpenAiClient:
+class ChatCompletionClient:
+    """OpenAI-compatible chat client (OpenAI, DeepInfra, or custom base URL)."""
+
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
@@ -17,12 +19,12 @@ class OpenAiClient:
         if not self._settings.ai_enabled:
             yield (
                 "Veridian AI is not configured on this server. "
-                "Set OPENAI_API_KEY in the API environment to enable assistance."
+                "Set AI_API_KEY (or DEEPINFRA_API_KEY / OPENAI_API_KEY) in the API environment."
             )
             return
 
         headers = {
-            "Authorization": f"Bearer {self._settings.openai_api_key}",
+            "Authorization": f"Bearer {self._settings.resolved_ai_api_key}",
             "Content-Type": "application/json",
         }
         payload: dict[str, Any] = {
@@ -31,11 +33,12 @@ class OpenAiClient:
             "stream": True,
             "temperature": 0.2,
         }
+        endpoint = f"{self._settings.resolved_ai_base_url}/chat/completions"
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
                 "POST",
-                "https://api.openai.com/v1/chat/completions",
+                endpoint,
                 headers=headers,
                 json=payload,
             ) as response:
@@ -51,3 +54,7 @@ class OpenAiClient:
                     content = delta.get("content")
                     if content:
                         yield str(content)
+
+
+# Backward-compatible alias
+OpenAiClient = ChatCompletionClient

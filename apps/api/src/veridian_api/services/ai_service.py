@@ -149,6 +149,7 @@ class AiService:
             content=assistant_text,
             message_metadata={
                 "model": self._settings.ai_model,
+                "provider": self._settings.resolved_ai_provider,
                 "aiEnabled": self._settings.ai_enabled,
             },
         )
