@@ -134,7 +134,10 @@ class FileTreeService:
 
     async def read_file_content(self, user_id: UUID, project_id: UUID, file_id: UUID) -> tuple[File, str]:
         file = await self.get_file(user_id, project_id, file_id)
-        data = await self._storage.get_bytes(file.storage_key)
+        try:
+            data = await self._storage.get_bytes(file.storage_key)
+        except FileNotFoundError as exc:
+            raise NotFoundError("File content not found in storage") from exc
         return file, data.decode("utf-8")
 
     async def update_file_content(
@@ -226,6 +229,107 @@ class FileTreeService:
 
         await self._db.delete(folder)
         await self._db.flush()
+
+    async def create_file_at_path(
+        self,
+        user_id: UUID,
+        project_id: UUID,
+        file_path: str,
+        content: str = "",
+        language: Optional[HdlLanguage] = None,
+    ) -> File:
+        await self._projects.get_project(user_id, project_id)
+        normalized = file_path.strip().lstrip("/")
+        if not normalized:
+            raise ValidationError("Invalid file path")
+
+        parts = [part for part in normalized.split("/") if part]
+        if not parts:
+            raise ValidationError("Invalid file path")
+
+        file_name = parts[-1]
+        folder_parts = parts[:-1]
+        parent_id: Optional[UUID] = None
+        parent_path: Optional[str] = None
+
+        for folder_name in folder_parts:
+            path = join_path(parent_path, folder_name)
+            folder = await self._db.scalar(
+                select(Folder).where(Folder.project_id == project_id, Folder.path == path)
+            )
+            if folder is None:
+                try:
+                    folder = await self.create_folder(
+                        user_id,
+                        project_id,
+                        folder_name,
+                        parent_id=parent_id,
+                    )
+                except ConflictError:
+                    folder = await self._db.scalar(
+                        select(Folder).where(Folder.project_id == project_id, Folder.path == path)
+                    )
+                    if folder is None:
+                        raise
+            parent_id = folder.id
+            parent_path = folder.path
+
+        return await self.create_file(
+            user_id,
+            project_id,
+            file_name,
+            folder_id=parent_id,
+            content=content,
+            language=language,
+        )
+
+    async def upsert_file_at_path(
+        self,
+        user_id: UUID,
+        project_id: UUID,
+        file_path: str,
+        content: str,
+        language: Optional[HdlLanguage] = None,
+    ) -> File:
+        normalized = file_path.strip().lstrip("/")
+        if not normalized:
+            raise ValidationError("Invalid file path")
+
+        full_path = f"/{normalized}"
+
+        existing = await self._db.scalar(
+            select(File).where(File.project_id == project_id, File.path == full_path)
+        )
+        if existing is not None:
+            return await self.update_file_content(
+                user_id,
+                project_id,
+                existing.id,
+                content,
+                existing.checksum,
+            )
+
+        try:
+            return await self.create_file_at_path(
+                user_id,
+                project_id,
+                normalized,
+                content=content,
+                language=language,
+            )
+        except ConflictError:
+            existing = await self._db.scalar(
+                select(File).where(File.project_id == project_id, File.path == full_path)
+            )
+            if existing is None:
+                raise
+            return await self.update_file_content(
+                user_id,
+                project_id,
+                existing.id,
+                content,
+                existing.checksum,
+            )
 
     async def _get_folder(self, project_id: UUID, folder_id: UUID) -> Folder:
         folder = await self._db.scalar(

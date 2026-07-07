@@ -1,4 +1,4 @@
-import type { ArtifactMeta, JobStatus, LogLevel } from '../jobs';
+import type { ArtifactMeta, JobLogEntry, JobStatus, LogLevel } from '../jobs';
 
 export type AiMessageRole = 'user' | 'assistant' | 'system';
 
@@ -25,12 +25,37 @@ export interface CreateConversationRequest {
   title?: string;
 }
 
+export interface EditorSelection {
+  startLine: number;
+  endLine: number;
+  startColumn: number;
+  endColumn: number;
+  text: string;
+}
+
+export interface AiBuildContext {
+  jobStatus?: JobStatus;
+  simulationLogs?: Array<Pick<JobLogEntry, 'level' | 'message'>>;
+}
+
+export interface AiWriteActiveFileAction {
+  action: 'write_active_file';
+  content: string;
+}
+
+export interface AiWriteFileAction {
+  action: 'write_file';
+  path: string;
+  content: string;
+}
+
+export type AiAssistantAction = AiWriteActiveFileAction | AiWriteFileAction;
+
 export interface SendAiMessageRequest {
   content: string;
   activeFileId?: string;
 }
 
-// --- Job WebSocket messages ---
 
 export interface WsJobLogMessage {
   type: 'log';
@@ -104,6 +129,8 @@ export interface WsAiUserMessage {
   content: string;
   activeFileId?: string;
   editorContent?: string;
+  editorSelection?: EditorSelection;
+  buildContext?: AiBuildContext;
 }
 
 export type WsAiServerMessage = WsAiChunkMessage | WsAiDoneMessage | WsAiErrorMessage;

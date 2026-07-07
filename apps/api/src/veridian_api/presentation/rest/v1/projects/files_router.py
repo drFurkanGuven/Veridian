@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
+from veridian_api.core.config import Settings
 from veridian_api.core.deps import get_current_user, get_db, get_settings_dep
 from veridian_api.infrastructure.database.models.user import User
 from veridian_api.presentation.rest.v1.projects.files_schemas import (
@@ -15,6 +16,7 @@ from veridian_api.presentation.rest.v1.projects.files_schemas import (
     ProjectTreeResponse,
     RenameFileRequest,
     UpdateFileContentRequest,
+    UpsertFileByPathRequest,
     build_project_tree,
     file_to_node,
 )
@@ -70,15 +72,44 @@ async def create_file(
     current_user: User = Depends(get_current_user),
     tree: FileTreeService = Depends(get_file_tree_service),
 ) -> FileNodeResponse:
-    file = await tree.create_file(
+    file = await tree.create_file_at_path(
         current_user.id,
         project_id,
-        body.name,
+        body.path,
+        content=body.content,
+        language=body.language,
+    ) if body.path else await tree.create_file(
+        current_user.id,
+        project_id,
+        body.name or "",
         folder_id=body.folder_id,
         content=body.content,
         language=body.language,
     )
     return file_to_node(file)
+
+
+@router.put("/files/by-path", response_model=FileContentResponse)
+async def upsert_file_by_path(
+    project_id: UUID,
+    body: UpsertFileByPathRequest,
+    current_user: User = Depends(get_current_user),
+    tree: FileTreeService = Depends(get_file_tree_service),
+) -> FileContentResponse:
+    file = await tree.upsert_file_at_path(
+        current_user.id,
+        project_id,
+        body.path,
+        body.content,
+    )
+    return FileContentResponse(
+        id=file.id,
+        path=file.path,
+        content=body.content,
+        language=file.language,
+        checksum=file.checksum,
+        updated_at=file.updated_at,
+    )
 
 
 @router.get("/files/{file_id}", response_model=FileContentResponse)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -9,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from veridian_api.core.config import Settings
 from veridian_api.core.exceptions import ForbiddenError, NotFoundError, RateLimitError, ValidationError
+from veridian_api.domain.ai_tools import extract_ai_actions, strip_action_blocks
 from veridian_api.domain.enums import AiMessageRole
 from veridian_api.infrastructure.ai.openai_client import OpenAiClient
 from veridian_api.infrastructure.cache.rate_limiter import RateLimiter
 from veridian_api.infrastructure.database.models.ai import AiConversation, AiMessage
+from veridian_api.infrastructure.database.models.file import File
 from veridian_api.infrastructure.database.models.project import Project
 from veridian_api.services.file_tree_service import FileTreeService
 from veridian_api.services.project_service import ProjectService
@@ -20,8 +22,20 @@ from veridian_api.services.project_service import ProjectService
 _SYSTEM_PROMPT = """You are Veridian AI, an expert FPGA and HDL development assistant embedded in a cloud IDE.
 Help users with Verilog, SystemVerilog, VHDL, testbenches, synthesis constraints, and simulation debugging.
 Prefer concrete, actionable answers. When suggesting code, keep it minimal and syntactically correct.
-When the user asks you to fix, rewrite, or generate the active file, include the full updated file in a single fenced code block.
-The user can apply that block directly to their editor.
+When the user asks you to fix, rewrite, or generate the active file, write the full updated file using:
+```veridian-write-file
+<full file contents>
+```
+To create or update any project file (like Cursor), use a path on the first line:
+```veridian-write-file tb/tb_top.v
+<full file contents>
+```
+Or JSON:
+```veridian-action
+{"action": "write_file", "path": "tb/tb_top.v", "content": "..."}
+```
+The IDE applies these blocks automatically. Explain changes outside tool blocks when helpful.
+When the user highlights a selection, only change that region unless they ask for the full file.
 You are in a multi-turn conversation: remember earlier messages and follow up on prior answers."""
 
 
@@ -121,6 +135,8 @@ class AiService:
         content: str,
         active_file_id: Optional[UUID] = None,
         editor_content: Optional[str] = None,
+        editor_selection: Optional[dict[str, Any]] = None,
+        build_context: Optional[dict[str, Any]] = None,
     ) -> AsyncIterator[str]:
         text = content.strip()
         if not text:
@@ -145,13 +161,19 @@ class AiService:
             user_id,
             active_file_id,
             editor_content,
+            editor_selection,
+            build_context,
         )
         assistant_parts: list[str] = []
         async for chunk in self._openai.stream_chat(messages):
             assistant_parts.append(chunk)
             yield chunk
 
-        assistant_text = "".join(assistant_parts).strip() or "No response."
+        assistant_raw = "".join(assistant_parts).strip() or "No response."
+        actions = extract_ai_actions(assistant_raw)
+        assistant_text = strip_action_blocks(assistant_raw) or (
+            "Applied code changes to the active file." if actions else assistant_raw
+        )
         assistant_message = AiMessage(
             conversation_id=conversation.id,
             role=AiMessageRole.ASSISTANT,
@@ -160,11 +182,17 @@ class AiService:
                 "model": self._settings.ai_model,
                 "provider": self._settings.resolved_ai_provider,
                 "aiEnabled": self._settings.ai_enabled,
+                "actions": actions,
             },
         )
         self._db.add(assistant_message)
         await self._db.flush()
         self._last_assistant_message_id = assistant_message.id
+        self._last_assistant_actions = actions
+
+    @property
+    def last_assistant_actions(self) -> list[dict[str, Any]]:
+        return getattr(self, "_last_assistant_actions", [])
 
     @property
     def last_assistant_message_id(self) -> Optional[UUID]:
@@ -176,6 +204,8 @@ class AiService:
         user_id: UUID,
         active_file_id: Optional[UUID],
         editor_content: Optional[str] = None,
+        editor_selection: Optional[dict[str, Any]] = None,
+        build_context: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, str]]:
         system_parts = [_SYSTEM_PROMPT]
         file_context_block: Optional[str] = None
@@ -195,6 +225,17 @@ class AiService:
                         ]
                     )
                 )
+                project_files = list(
+                    await self._db.scalars(
+                        select(File).where(File.project_id == conversation.project_id)
+                    )
+                )
+                if project_files:
+                    file_lines = "\n".join(
+                        f"- {file.path} ({file.language.value})"
+                        for file in sorted(project_files, key=lambda item: item.path)
+                    )
+                    system_parts.append(f"Project files:\n{file_lines}")
 
         if active_file_id is not None and conversation.project_id is not None:
             try:
@@ -228,6 +269,46 @@ class AiService:
             )
         ).all()
 
+        context_blocks: list[str] = []
+        if file_context_block:
+            context_blocks.append(file_context_block)
+
+        if editor_selection:
+            start_line = editor_selection.get("startLine")
+            end_line = editor_selection.get("endLine")
+            selection_text = editor_selection.get("text")
+            if isinstance(selection_text, str) and selection_text.strip():
+                context_blocks.append(
+                    "[User editor selection"
+                    + (
+                        f" lines {start_line}-{end_line}"
+                        if start_line and end_line
+                        else ""
+                    )
+                    + "]\n```\n"
+                    + selection_text.strip()
+                    + "\n```"
+                )
+
+        if build_context:
+            job_status = build_context.get("jobStatus")
+            logs = build_context.get("simulationLogs") or build_context.get("simulation_logs")
+            if job_status:
+                context_blocks.append(f"[Last job status: {job_status}]")
+            if isinstance(logs, list) and logs:
+                log_lines: list[str] = []
+                for entry in logs[-40:]:
+                    if not isinstance(entry, dict):
+                        continue
+                    level = entry.get("level", "info")
+                    message = entry.get("message", "")
+                    if message:
+                        log_lines.append(f"{level}: {message}")
+                if log_lines:
+                    context_blocks.append(
+                        "[Recent build/simulation logs]\n" + "\n".join(log_lines)
+                    )
+
         recent_history = [message for message in history if message.role != AiMessageRole.SYSTEM][-40:]
 
         llm_messages: list[dict[str, str]] = [
@@ -238,8 +319,8 @@ class AiService:
             is_last_user = (
                 index == len(recent_history) - 1 and message.role == AiMessageRole.USER
             )
-            if is_last_user and file_context_block:
-                content = f"{content}\n\n{file_context_block}"
+            if is_last_user and context_blocks:
+                content = f"{content}\n\n" + "\n\n".join(context_blocks)
             llm_messages.append({"role": message.role.value, "content": content})
 
         return llm_messages

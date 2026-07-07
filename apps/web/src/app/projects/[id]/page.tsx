@@ -2,6 +2,7 @@
 
 import type {
   ArtifactMeta,
+  EditorSelection,
   FileContent,
   FileNode,
   FolderNode,
@@ -13,7 +14,7 @@ import type {
 import { isVcdArtifact } from '@veridian/shared-types';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AiChatPanel } from '@/components/ai-chat-panel';
 import { CodeEditor } from '@/components/code-editor';
@@ -25,6 +26,7 @@ import {
   getProjectTree,
   renameFile,
   updateFileContent,
+  upsertFileByPath,
 } from '@/lib/files-api';
 import {
   connectJobWebSocket,
@@ -49,6 +51,17 @@ function collectFiles(tree: ProjectTree): FileNode[] {
   };
   walk(tree.rootFolders);
   return files;
+}
+
+function suggestNewFileName(existingFiles: FileNode[]): string {
+  const usedPaths = new Set(existingFiles.map((file) => file.path));
+  let candidate = 'new.v';
+  let counter = 2;
+  while (usedPaths.has(`/${candidate}`)) {
+    candidate = `new-${counter}.v`;
+    counter += 1;
+  }
+  return candidate;
 }
 
 function fileBaseName(path: string): string {
@@ -80,6 +93,7 @@ export default function ProjectDetailPage() {
   const [tree, setTree] = useState<ProjectTree | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileContent | null>(null);
   const [editorValue, setEditorValue] = useState('');
+  const [editorSelection, setEditorSelection] = useState<EditorSelection | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -121,6 +135,23 @@ export default function ProjectDetailPage() {
 
   const files = tree ? collectFiles(tree) : [];
 
+  const aiBuildContext = useMemo(() => {
+    const hasErrorLogs = jobLogs.some((log) => log.level === 'error');
+    const includeLogs = jobStatus === 'failed' || hasErrorLogs;
+    if (!includeLogs && !jobStatus) return undefined;
+    return {
+      ...(jobStatus ? { jobStatus } : {}),
+      ...(includeLogs && jobLogs.length > 0
+        ? {
+            simulationLogs: jobLogs.map((log) => ({
+              level: log.level,
+              message: log.message,
+            })),
+          }
+        : {}),
+    };
+  }, [jobLogs, jobStatus]);
+
   useEffect(() => {
     if (!testbenchFileId && files.length > 0) {
       const tb = files.find((f) => f.path.includes('tb')) ?? files[0];
@@ -135,6 +166,7 @@ export default function ProjectDetailPage() {
       const content = await getFileContent(projectId, fileId);
       setSelectedFile(content);
       setEditorValue(content.content);
+      setEditorSelection(null);
       setNameDraft(fileBaseName(content.path));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open file');
@@ -144,14 +176,48 @@ export default function ProjectDetailPage() {
   async function handleCreateFile() {
     setError('');
     try {
-      const created = await createFile(projectId, {
-        name: 'top.v',
-        content: 'module top;\nendmodule\n',
-      });
-      await loadTree();
-      await openFile(created.id);
+      const freshTree = await getProjectTree(projectId);
+      const currentFiles = collectFiles(freshTree);
+      let name = suggestNewFileName(currentFiles);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+          const created = await createFile(projectId, {
+            name,
+            content: 'module top;\nendmodule\n',
+          });
+          await loadTree();
+          await openFile(created.id);
+          return;
+        } catch (err) {
+          const message = err instanceof Error ? err.message.toLowerCase() : '';
+          if (!message.includes('already exists') || attempt === 4) {
+            throw err;
+          }
+          name = suggestNewFileName([
+            ...currentFiles,
+            { path: `/${name}` } as FileNode,
+          ]);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create file');
+    }
+  }
+
+  async function handleAiWriteFile(path: string, content: string) {
+    setError('');
+    try {
+      const updated = await upsertFileByPath(projectId, path, content);
+      await loadTree();
+      setSelectedFile(updated);
+      setEditorValue(updated.content);
+      setNameDraft(fileBaseName(updated.path));
+      setEditorSelection(null);
+      setCenterTab('editor');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to write file');
+      throw err;
     }
   }
 
@@ -492,6 +558,7 @@ export default function ProjectDetailPage() {
                   language={selectedFile.language}
                   path={selectedFile.path}
                   onChange={setEditorValue}
+                  onSelectionChange={setEditorSelection}
                   onSave={() => handleSave()}
                   className="min-h-0 flex-1 rounded border border-ide-border"
                 />
@@ -548,7 +615,10 @@ export default function ProjectDetailPage() {
               activeFileId={selectedFile?.id}
               activeFilePath={selectedFile?.path}
               editorContent={editorValue}
+              editorSelection={editorSelection}
+              buildContext={aiBuildContext}
               onApplyToEditor={handleApplyToEditor}
+              onWriteFile={handleAiWriteFile}
               onApplyAndSave={(content) => {
                 handleApplyAndSave(content).catch((err: unknown) => {
                   setError(err instanceof Error ? err.message : 'Failed to save');

@@ -46,9 +46,15 @@ class ObjectStorage:
 
     async def get_bytes(self, key: str) -> bytes:
         def _get() -> bytes:
-            response = self._client.get_object(Bucket=self._bucket, Key=key)
-            body = response["Body"].read()
-            return bytes(body)
+            try:
+                response = self._client.get_object(Bucket=self._bucket, Key=key)
+                body = response["Body"].read()
+                return bytes(body)
+            except ClientError as exc:
+                code = exc.response.get("Error", {}).get("Code", "")
+                if code in {"NoSuchKey", "404", "NotFound"}:
+                    raise FileNotFoundError(key) from exc
+                raise
 
         return await asyncio.to_thread(_get)
 

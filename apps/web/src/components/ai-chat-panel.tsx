@@ -1,6 +1,12 @@
 'use client';
 
-import type { AiConversation, AiMessage } from '@veridian/shared-types';
+import type {
+  AiAssistantAction,
+  AiBuildContext,
+  AiConversation,
+  AiMessage,
+  EditorSelection,
+} from '@veridian/shared-types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -16,8 +22,11 @@ interface AiChatPanelProps {
   activeFileId?: string | null;
   activeFilePath?: string | null;
   editorContent?: string;
+  editorSelection?: EditorSelection | null;
+  buildContext?: AiBuildContext;
   onApplyToEditor?: (content: string) => void;
   onApplyAndSave?: (content: string) => void;
+  onWriteFile?: (path: string, content: string) => Promise<void>;
   className?: string;
 }
 
@@ -26,6 +35,8 @@ interface ChatEntry {
   role: AiMessage['role'];
   content: string;
   streaming?: boolean;
+  autoApplied?: boolean;
+  appliedPaths?: string[];
 }
 
 function conversationStorageKey(projectId: string): string {
@@ -37,10 +48,45 @@ function extractPrimaryCodeBlock(content: string): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
+function stripToolBlocks(content: string): string {
+  return content
+    .replace(/```veridian-write-file\s+[^\n]+\n[\s\S]*?```/g, '')
+    .replace(/```veridian-create-file\s+[^\n]+\n[\s\S]*?```/g, '')
+    .replace(/```veridian-write-file\n[\s\S]*?```/g, '')
+    .replace(/```veridian-action\n[\s\S]*?```/g, '')
+    .trim();
+}
+
+function parseActions(metadata: Record<string, unknown>): AiAssistantAction[] {
+  const raw = metadata.actions;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is AiAssistantAction => {
+    if (typeof item !== 'object' || item === null) return false;
+    const action = (item as AiAssistantAction).action;
+    if (action === 'write_active_file') {
+      return typeof (item as { content?: unknown }).content === 'string';
+    }
+    if (action === 'write_file') {
+      const writeFile = item as { path?: unknown; content?: unknown };
+      return typeof writeFile.path === 'string' && typeof writeFile.content === 'string';
+    }
+    return false;
+  });
+}
+
 const QUICK_PROMPTS = [
-  'Explain this file',
-  'Fix errors in this code',
-  'Add $dumpfile to this testbench',
+  { label: 'Explain this file', prompt: 'Explain this file' },
+  { label: 'Fix errors in this code', prompt: 'Fix errors in this code' },
+  {
+    label: 'Fix selection only',
+    prompt: 'Fix only the selected code block. Keep the rest of the file unchanged.',
+    requiresSelection: true,
+  },
+  { label: 'Add $dumpfile to this testbench', prompt: 'Add $dumpfile to this testbench' },
+  {
+    label: 'Create testbench file',
+    prompt: 'Create a new testbench file for the open design and write it to the project.',
+  },
 ];
 
 export function AiChatPanel({
@@ -48,14 +94,19 @@ export function AiChatPanel({
   activeFileId,
   activeFilePath,
   editorContent,
+  editorSelection,
+  buildContext,
   onApplyToEditor,
   onApplyAndSave,
+  onWriteFile,
   className = '',
 }: AiChatPanelProps) {
   const wsRef = useRef<WebSocket | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const editorContentRef = useRef(editorContent ?? '');
   const activeFileIdRef = useRef(activeFileId);
+  const editorSelectionRef = useRef(editorSelection);
+  const buildContextRef = useRef(buildContext);
   const [conversation, setConversation] = useState<AiConversation | null>(null);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
@@ -65,6 +116,8 @@ export function AiChatPanel({
 
   editorContentRef.current = editorContent ?? '';
   activeFileIdRef.current = activeFileId;
+  editorSelectionRef.current = editorSelection;
+  buildContextRef.current = buildContext;
 
   const scrollToBottom = useCallback(() => {
     const container = messagesRef.current;
@@ -155,15 +208,80 @@ export function AiChatPanel({
           ),
         );
       },
-      onDone: (messageId) => {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantEntry.id
-              ? { ...message, id: messageId || message.id, streaming: false }
-              : message,
+      onDone: (messageId, metadata) => {
+        const actions = parseActions(metadata);
+        const appliedPaths: string[] = [];
+        let autoApplied = false;
+
+        const pathWriteActions = [
+          ...actions.filter(
+            (action): action is Extract<AiAssistantAction, { action: 'write_file' }> =>
+              action.action === 'write_file',
           ),
-        );
-        setSending(false);
+          ...(actions
+            .filter((action) => action.action === 'write_active_file')
+            .flatMap((action) =>
+              onWriteFile && activeFilePath
+                ? [
+                    {
+                      action: 'write_file' as const,
+                      path: activeFilePath.replace(/^\//, ''),
+                      content: action.content,
+                    },
+                  ]
+                : [],
+            )),
+        ];
+
+        for (const action of actions) {
+          if (
+            action.action === 'write_active_file' &&
+            onApplyToEditor &&
+            !(onWriteFile && activeFilePath)
+          ) {
+            onApplyToEditor(action.content);
+            autoApplied = true;
+          }
+        }
+
+        if (pathWriteActions.length > 0 && onWriteFile) {
+          autoApplied = true;
+        }
+
+        const finish = (paths: string[]) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantEntry.id
+                ? {
+                    ...message,
+                    id: messageId || message.id,
+                    content: stripToolBlocks(message.content) || message.content,
+                    streaming: false,
+                    autoApplied: autoApplied || paths.length > 0,
+                    appliedPaths: paths,
+                  }
+                : message,
+            ),
+          );
+          setSending(false);
+        };
+
+        if (pathWriteActions.length === 0 || !onWriteFile) {
+          finish(appliedPaths);
+          return;
+        }
+
+        void (async () => {
+          try {
+            for (const action of pathWriteActions) {
+              await onWriteFile(action.path, action.content);
+              appliedPaths.push(action.path);
+            }
+            finish(appliedPaths);
+          } catch {
+            finish(appliedPaths);
+          }
+        })();
       },
       onError: (message) => {
         setError(message);
@@ -193,6 +311,8 @@ export function AiChatPanel({
       sendAiMessage(ws, text, {
         activeFileId: activeFileIdRef.current ?? undefined,
         editorContent: editorContentRef.current,
+        editorSelection: editorSelectionRef.current ?? undefined,
+        buildContext: buildContextRef.current,
       });
     };
   }
@@ -205,6 +325,8 @@ export function AiChatPanel({
     );
   }
 
+  const hasSelection = Boolean(editorSelection?.text?.trim());
+
   return (
     <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className}`}>
       <div className="mb-2 flex shrink-0 items-center gap-2">
@@ -212,6 +334,11 @@ export function AiChatPanel({
           <p className="min-w-0 flex-1 truncate text-xs text-ide-muted">
             <span className="font-mono text-ide-text">{activeFilePath}</span>
             <span className="ml-1 text-ide-muted">(live editor)</span>
+            {hasSelection && (
+              <span className="ml-1 text-sky-400">
+                · lines {editorSelection!.startLine}–{editorSelection!.endLine} selected
+              </span>
+            )}
           </p>
         ) : (
           <p className="flex-1 text-xs text-yellow-400/90">Open a file for AI code edits.</p>
@@ -227,22 +354,34 @@ export function AiChatPanel({
         </button>
       </div>
 
+      {buildContext?.simulationLogs && buildContext.simulationLogs.length > 0 && (
+        <p className="mb-2 shrink-0 text-[10px] text-amber-400/90">
+          Simulation logs will be included with your next message.
+        </p>
+      )}
+
       {error && <p className="mb-2 shrink-0 text-xs text-red-400">{error}</p>}
 
       <div className="mb-2 flex shrink-0 flex-wrap gap-1">
-        {QUICK_PROMPTS.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            disabled={sending || !activeFileId}
-            onClick={() => {
-              handleSend(prompt).catch(() => undefined);
-            }}
-            className="rounded border border-ide-border px-2 py-0.5 text-[10px] text-ide-muted hover:bg-ide-sidebar disabled:opacity-50"
-          >
-            {prompt}
-          </button>
-        ))}
+        {QUICK_PROMPTS.map((item) => {
+          const disabled =
+            sending ||
+            !activeFileId ||
+            (item.requiresSelection ? !hasSelection : false);
+          return (
+            <button
+              key={item.label}
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                handleSend(item.prompt).catch(() => undefined);
+              }}
+              className="rounded border border-ide-border px-2 py-0.5 text-[10px] text-ide-muted hover:bg-ide-sidebar disabled:opacity-50"
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
 
       <div
@@ -267,6 +406,13 @@ export function AiChatPanel({
               <p className="mb-1 text-[10px] uppercase tracking-wide text-ide-muted">{message.role}</p>
               <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
               {message.streaming && <span className="text-ide-muted">…</span>}
+              {message.autoApplied && !message.streaming && (
+                <p className="mt-1 text-[10px] text-emerald-400">
+                  {message.appliedPaths && message.appliedPaths.length > 0
+                    ? `Wrote ${message.appliedPaths.join(', ')}`
+                    : 'Applied to editor automatically.'}
+                </p>
+              )}
               {codeBlock && !message.streaming && onApplyToEditor && (
                 <div className="mt-2 flex gap-2">
                   <button

@@ -55,8 +55,12 @@ async def ai_chat_ws(
 
             active_file_id = payload.get("activeFileId")
             editor_content = payload.get("editorContent")
+            editor_selection = payload.get("editorSelection")
+            build_context = payload.get("buildContext")
             file_uuid = UUID(str(active_file_id)) if active_file_id else None
             editor_text = str(editor_content) if editor_content is not None else None
+            selection_ctx = editor_selection if isinstance(editor_selection, dict) else None
+            build_ctx = build_context if isinstance(build_context, dict) else None
 
             async with async_session_factory() as session:
                 ai = AiService(session, settings)
@@ -67,10 +71,13 @@ async def ai_chat_ws(
                         content,
                         active_file_id=file_uuid,
                         editor_content=editor_text,
+                        editor_selection=selection_ctx,
+                        build_context=build_ctx,
                     ):
                         await websocket.send_json({"type": "chunk", "content": chunk})
 
                     message_id = ai.last_assistant_message_id
+                    actions = ai.last_assistant_actions
                     await websocket.send_json(
                         {
                             "type": "done",
@@ -78,9 +85,11 @@ async def ai_chat_ws(
                             "metadata": {
                                 "model": settings.ai_model,
                                 "provider": settings.resolved_ai_provider,
+                                "actions": actions,
                             },
                         }
                     )
+                    await session.commit()
                 except AppError as exc:
                     await session.rollback()
                     await websocket.send_json({"type": "error", "message": exc.message})

@@ -64,7 +64,8 @@ export interface FileContent {
 }
 
 export interface CreateFileRequest {
-  name: string;
+  name?: string;
+  path?: string;
   folderId?: string;
   content?: string;
   language?: HdlLanguage;
@@ -73,6 +74,11 @@ export interface CreateFileRequest {
 export interface UpdateFileContentRequest {
   content: string;
   checksum: string;
+}
+
+export interface UpsertFileByPathRequest {
+  path: string;
+  content: string;
 }
 
 export interface CreateFolderRequest {

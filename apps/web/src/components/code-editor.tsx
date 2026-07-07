@@ -6,16 +6,33 @@ import { useCallback } from 'react';
 
 import { hdlLanguageToMonaco, registerMonacoLanguages } from '@/lib/monaco-languages';
 
+export interface EditorSelectionState {
+  startLine: number;
+  endLine: number;
+  startColumn: number;
+  endColumn: number;
+  text: string;
+}
+
 interface CodeEditorProps {
   value: string;
   language: HdlLanguage;
   path: string;
   onChange: (value: string) => void;
   onSave?: () => void;
+  onSelectionChange?: (selection: EditorSelectionState | null) => void;
   className?: string;
 }
 
-export function CodeEditor({ value, language, path, onChange, onSave, className = '' }: CodeEditorProps) {
+export function CodeEditor({
+  value,
+  language,
+  path,
+  onChange,
+  onSave,
+  onSelectionChange,
+  className = '',
+}: CodeEditorProps) {
   const handleMount = useCallback(
     (editor: Monaco['editor']['IStandaloneCodeEditor'], monaco: Monaco) => {
       registerMonacoLanguages(monaco);
@@ -37,8 +54,31 @@ export function CodeEditor({ value, language, path, onChange, onSave, className 
           onSave();
         });
       }
+
+      if (onSelectionChange) {
+        editor.onDidChangeCursorSelection(() => {
+          const selection = editor.getSelection();
+          const model = editor.getModel();
+          if (!selection || !model) {
+            onSelectionChange(null);
+            return;
+          }
+          const text = model.getValueInRange(selection);
+          if (!text.trim()) {
+            onSelectionChange(null);
+            return;
+          }
+          onSelectionChange({
+            startLine: selection.startLineNumber,
+            endLine: selection.endLineNumber,
+            startColumn: selection.selectionStartColumn,
+            endColumn: selection.selectionEndColumn,
+            text,
+          });
+        });
+      }
     },
-    [onSave],
+    [onSave, onSelectionChange],
   );
 
   return (
@@ -63,6 +103,7 @@ export function CodeEditor({ value, language, path, onChange, onSave, className 
           smoothScrolling: true,
           cursorBlinking: 'smooth',
           bracketPairColorization: { enabled: true },
+          copyWithSyntaxHighlighting: false,
         }}
       />
     </div>

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from veridian_api.domain.enums import HdlLanguage
 from veridian_api.infrastructure.database.models.file import File, Folder
@@ -42,10 +42,17 @@ class CreateFolderRequest(CamelModel):
 
 
 class CreateFileRequest(CamelModel):
-    name: str = Field(min_length=1, max_length=255)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    path: Optional[str] = Field(default=None, min_length=1, max_length=512)
     folder_id: Optional[UUID] = None
     content: str = ""
     language: Optional[HdlLanguage] = None
+
+    @model_validator(mode="after")
+    def require_name_or_path(self) -> "CreateFileRequest":
+        if not self.path and not self.name:
+            raise ValueError("Either name or path is required")
+        return self
 
 
 class FileContentResponse(CamelModel):
@@ -60,6 +67,11 @@ class FileContentResponse(CamelModel):
 class UpdateFileContentRequest(CamelModel):
     content: str
     checksum: str = Field(min_length=64, max_length=64)
+
+
+class UpsertFileByPathRequest(CamelModel):
+    path: str = Field(min_length=1, max_length=512)
+    content: str = ""
 
 
 class RenameFileRequest(CamelModel):

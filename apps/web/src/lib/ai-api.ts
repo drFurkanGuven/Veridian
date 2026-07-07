@@ -1,36 +1,18 @@
 import type {
+  AiBuildContext,
   AiConversation,
   AiConversationListResponse,
   AiMessage,
   AiMessageListResponse,
   CreateAiConversationRequest,
+  EditorSelection,
   WsAiClientMessage,
   WsAiServerMessage,
 } from '@veridian/shared-types';
 
+import { apiFetch, authHeaders, getAccessToken, parseError } from '@/lib/api-http';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-
-function getAccessToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('veridian_access_token');
-}
-
-function authHeaders(): HeadersInit {
-  const token = getAccessToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
-async function parseError(response: Response): Promise<string> {
-  try {
-    const data = await response.json();
-    return data.detail ?? data.message ?? response.statusText;
-  } catch {
-    return response.statusText;
-  }
-}
 
 function wsBaseUrl(): string {
   const base = API_URL.replace(/\/$/, '');
@@ -40,7 +22,7 @@ function wsBaseUrl(): string {
 }
 
 export async function listProjectConversations(projectId: string): Promise<AiConversation[]> {
-  const response = await fetch(`${API_URL}/api/v1/projects/${projectId}/ai/conversations`, {
+  const response = await apiFetch(`${API_URL}/api/v1/projects/${projectId}/ai/conversations`, {
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error(await parseError(response));
@@ -52,7 +34,7 @@ export async function createProjectConversation(
   projectId: string,
   input: CreateAiConversationRequest = {},
 ): Promise<AiConversation> {
-  const response = await fetch(`${API_URL}/api/v1/projects/${projectId}/ai/conversations`, {
+  const response = await apiFetch(`${API_URL}/api/v1/projects/${projectId}/ai/conversations`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(input),
@@ -62,7 +44,7 @@ export async function createProjectConversation(
 }
 
 export async function getConversationMessages(conversationId: string): Promise<AiMessage[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/v1/ai/conversations/${conversationId}/messages?pageSize=200`,
     { headers: authHeaders() },
   );
@@ -72,7 +54,7 @@ export async function getConversationMessages(conversationId: string): Promise<A
 }
 
 export async function deleteConversation(conversationId: string): Promise<void> {
-  const response = await fetch(`${API_URL}/api/v1/ai/conversations/${conversationId}`, {
+  const response = await apiFetch(`${API_URL}/api/v1/ai/conversations/${conversationId}`, {
     method: 'DELETE',
     headers: authHeaders(),
   });
@@ -83,7 +65,7 @@ export function connectAiWebSocket(
   conversationId: string,
   handlers: {
     onChunk?: (content: string) => void;
-    onDone?: (messageId: string) => void;
+    onDone?: (messageId: string, metadata: Record<string, unknown>) => void;
     onError?: (message: string) => void;
   },
 ): WebSocket | null {
@@ -100,7 +82,7 @@ export function connectAiWebSocket(
       if (msg.type === 'chunk') {
         handlers.onChunk?.(msg.content);
       } else if (msg.type === 'done') {
-        handlers.onDone?.(msg.messageId);
+        handlers.onDone?.(msg.messageId, msg.metadata);
       } else if (msg.type === 'error') {
         handlers.onError?.(msg.message);
       }
@@ -116,13 +98,20 @@ export function connectAiWebSocket(
 export function sendAiMessage(
   ws: WebSocket,
   content: string,
-  options?: { activeFileId?: string; editorContent?: string },
+  options?: {
+    activeFileId?: string;
+    editorContent?: string;
+    editorSelection?: EditorSelection;
+    buildContext?: AiBuildContext;
+  },
 ): void {
   const payload: WsAiClientMessage = {
     type: 'message',
     content,
     ...(options?.activeFileId ? { activeFileId: options.activeFileId } : {}),
     ...(options?.editorContent !== undefined ? { editorContent: options.editorContent } : {}),
+    ...(options?.editorSelection ? { editorSelection: options.editorSelection } : {}),
+    ...(options?.buildContext ? { buildContext: options.buildContext } : {}),
   };
   ws.send(JSON.stringify(payload));
 }
