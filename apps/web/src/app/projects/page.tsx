@@ -80,9 +80,6 @@ export default function ProjectsPage() {
           <Link href="/account" className="text-sm text-ide-muted underline hover:text-white">
             Account
           </Link>
-          <Link href="/" className="text-sm text-ide-muted underline hover:text-white">
-            Home
-          </Link>
         </div>
       </header>
 

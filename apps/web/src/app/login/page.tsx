@@ -90,12 +90,6 @@ export default function LoginPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-4 text-xs text-ide-muted">
-            <Link href="/" className="underline hover:text-white">
-              Home
-            </Link>
-            <Link href="/projects" className="underline hover:text-white">
-              Projects
-            </Link>
             <span>© {new Date().getFullYear()} Veridian</span>
           </div>
         </section>
