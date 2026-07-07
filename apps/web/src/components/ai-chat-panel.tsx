@@ -110,6 +110,7 @@ export function AiChatPanel({
   const activeFileIdRef = useRef(activeFileId);
   const editorSelectionRef = useRef(editorSelection);
   const buildContextRef = useRef(buildContext);
+  const lastToolFeedbackRef = useRef<AiBuildContext['aiToolFeedback'] | undefined>(undefined);
   const [conversation, setConversation] = useState<AiConversation | null>(null);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
@@ -215,6 +216,7 @@ export function AiChatPanel({
         const actions = parseActions(metadata);
         const appliedPaths: string[] = [];
         let autoApplied = false;
+        const failedWrites: Array<{ path: string; error: string }> = [];
 
         const pathWriteActions = [
           ...actions.filter(
@@ -281,9 +283,20 @@ export function AiChatPanel({
         void (async () => {
           try {
             for (const action of pathWriteActions) {
-              await onWriteFile(action.path, action.content);
-              appliedPaths.push(action.path);
+              try {
+                await onWriteFile(action.path, action.content);
+                appliedPaths.push(action.path);
+              } catch (err) {
+                failedWrites.push({
+                  path: action.path,
+                  error: err instanceof Error ? err.message : 'Write failed',
+                });
+              }
             }
+            lastToolFeedbackRef.current = {
+              applied: appliedPaths,
+              failed: failedWrites.length > 0 ? failedWrites : undefined,
+            };
             finish(appliedPaths);
           } catch {
             finish(appliedPaths);
@@ -319,7 +332,10 @@ export function AiChatPanel({
         activeFileId: activeFileIdRef.current ?? undefined,
         editorContent: editorContentRef.current,
         editorSelection: editorSelectionRef.current ?? undefined,
-        buildContext: buildContextRef.current,
+        buildContext: {
+          ...(buildContextRef.current ?? {}),
+          ...(lastToolFeedbackRef.current ? { aiToolFeedback: lastToolFeedbackRef.current } : {}),
+        },
       });
     };
   }

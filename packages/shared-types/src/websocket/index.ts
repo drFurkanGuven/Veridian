@@ -36,6 +36,10 @@ export interface EditorSelection {
 export interface AiBuildContext {
   jobStatus?: JobStatus;
   simulationLogs?: Array<Pick<JobLogEntry, 'level' | 'message'>>;
+  aiToolFeedback?: {
+    applied?: string[];
+    failed?: Array<{ path: string; error: string }>;
+  };
 }
 
 export interface AiWriteActiveFileAction {
